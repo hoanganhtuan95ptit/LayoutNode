@@ -1,5 +1,6 @@
 package com.simple.ui.precompute.loader
 
+import android.graphics.drawable.Drawable
 import com.simple.ui.precompute.node.ImageSpec
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
@@ -30,6 +31,16 @@ interface ImageLoader {
      * để serialize thứ tự load↔cancel cho cùng spec.
      */
     val dispatcher: Executor get() = DEFAULT_DISPATCHER
+
+    /**
+     * Trả về drawable đã cache sẵn cho [spec], hoặc null nếu chưa có.
+     *
+     * Hàm này được gọi đồng bộ trên main thread trước khi [load] chạy, giúp
+     * [ImageSpec] có thể vẽ ngay khi ảnh đã từng load thành công trước đó.
+     * Implementation nên trả về một drawable instance độc lập vì bounds /
+     * callback của Drawable là mutable theo từng spec.
+     */
+    fun cached(spec: ImageSpec): Drawable? = null
 
     fun load(spec: ImageSpec, onReady: () -> Unit)
 

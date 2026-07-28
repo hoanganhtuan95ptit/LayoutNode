@@ -23,9 +23,13 @@ class PrecomputedView @JvmOverloads constructor(
 
     override val delegate: PrecomputedDelegate = PrecomputedDelegate(this, context, attrs)
 
+    var isFlexibleSize: Boolean = false
+
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val s = delegate.spec
-        setMeasuredDimension(s?.width ?: 0, s?.height ?: 0)
+        val width = if (isFlexibleSize) resolveSize(s?.width ?: 0, widthMeasureSpec) else s?.width ?: 0
+        val height = if (isFlexibleSize) resolveSize(s?.height ?: 0, heightMeasureSpec) else s?.height ?: 0
+        setMeasuredDimension(width, height)
     }
 
     override fun onDraw(canvas: Canvas) {

@@ -3,7 +3,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="#F5F5F5">
+    android:background="?attr/shadowColorBackground">
 
     <TextView
         android:layout_width="match_parent"
@@ -12,20 +12,14 @@
         android:textSize="20sp"
         android:textStyle="bold"
         android:padding="16dp"
-        android:textColor="@color/white"
+        android:textColor="?attr/shadowColorOnAccent"
         android:background="?attr/colorPrimary" />
 
-    <ScrollView
+    <com.simple.adapter.MultiRecyclerView
+        android:id="@+id/recyclerView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:padding="16dp">
-
-        <LinearLayout
-            android:id="@+id/container"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical" />
-
-    </ScrollView>
+        android:clipToPadding="false"
+        android:padding="16dp" />
 
 </LinearLayout>

@@ -5,6 +5,9 @@ import com.simple.ui.precompute.image.BigImageTransform
 /** Crop ảnh về hình tròn. */
 object CircleCrop : BigImageTransform
 
+/** Crop ảnh theo kiểu CenterCrop của Android. */
+object CenterCrop : BigImageTransform
+
 /** Crop ảnh về hình vuông bằng cạnh lớn hơn của output. */
 object CropSquare : BigImageTransform
 

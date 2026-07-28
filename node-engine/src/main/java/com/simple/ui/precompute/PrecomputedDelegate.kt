@@ -10,6 +10,8 @@ import android.view.View
 
 class PrecomputedDelegate(private val view: View, context: Context, attrs: AttributeSet?) {
 
+    private val runtime = PrecomputedRuntime(view)
+
     var spec: DrawSpec? = null
         set(value) {
             // Identity swap thuần: mọi tối ưu tái sử dụng subtree (skip measure,
@@ -36,14 +38,14 @@ class PrecomputedDelegate(private val view: View, context: Context, attrs: Attri
             // (detach no-op) — hook lifecycle không bị đụng, state giữ
             // nguyên. Non-shared spec (old-only / new-only) counter đi
             // đúng 0↔1 như thường.
-            if (view.isAttachedToWindow) value?.attach(view)
+            if (view.isAttachedToWindow) value?.attach(runtime)
             field = value
             if (old?.width != value?.width || old?.height != value?.height) {
-                view.requestLayout()
+                runtime.requestRemeasure()
             } else {
-                view.postInvalidateOnAnimation()
+                runtime.requestDraw()
             }
-            if (view.isAttachedToWindow) old?.detach(view)
+            if (view.isAttachedToWindow) old?.detach(runtime)
         }
 
     /**
@@ -80,11 +82,13 @@ class PrecomputedDelegate(private val view: View, context: Context, attrs: Attri
     }
 
     fun onAttachedToWindow() {
-        spec?.attach(view)
+        runtime.onAttachedToWindow()
+        spec?.attach(runtime)
     }
 
     fun onDetachedFromWindow() {
-        spec?.detach(view)
+        spec?.detach(runtime)
+        runtime.onDetachedFromWindow()
     }
 
     /**

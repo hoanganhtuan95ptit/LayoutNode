@@ -54,27 +54,51 @@ Trên Android stock, `View.onMeasure()` chạy ở **UI thread**, bao gồm cả
 
 ## 2. Kiến trúc tổng quan
 
+`node-engine` tách UI thành 3 chặng rõ ràng:
+
+1. **Build tree**: app tạo cây `LayoutNode` thuần data từ ViewModel/Repository.
+2. **Precompute**: `LayoutEngine` đo cây đó ở background thread và trả về `DrawSpec`.
+3. **Render**: `PrecomputedView` nhận `DrawSpec`, báo size cho Android rồi chỉ uỷ thác `draw(canvas)`.
+
 ```
-┌─────────────────┐    ┌──────────────────┐    ┌──────────────┐
-│   LayoutNode    │───▶│   LayoutEngine   │───▶│   DrawSpec   │
-│  (mô tả, data)  │    │  (đo, bg thread) │    │ (kết quả +   │
-│                 │    │                  │    │  cách vẽ)    │
-└─────────────────┘    └──────────────────┘    └──────────────┘
-        ▲                                              │
-        │                                              ▼
-   ViewModel /                                  ┌──────────────────┐
-   Repository                                   │ PrecomputedView  │
-                                                 │  (chỉ vẽ)        │
-                                                 └──────────────────┘
-        bất kỳ thread          bg thread              UI thread
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐    ┌──────────────┐
+│   LayoutNode    │───▶│   LayoutEngine   │───▶│  MeasurePolicy  │───▶│   DrawSpec   │
+│  (thuần data)   │    │  (orchestrate +  │    │ (thuật toán đo) │    │ (size + draw)│
+│                 │    │      cache)      │    │                 │    │              │
+└─────────────────┘    └──────────────────┘    └─────────────────┘    └──────────────┘
+        ▲                                                                    │
+        │                                                                    ▼
+ ViewModel /                                                      ┌──────────────────────┐
+ Repository                                                       │ PrecomputedView       │
+                                                                  │ + PrecomputedDelegate │
+                                                                  └──────────────────────┘
+   bất kỳ thread                         background thread                 UI thread
 ```
 
 | Tầng | Trách nhiệm | Thread |
 |------|-------------|--------|
-| `LayoutNode` | Mô tả cây layout — thuần data, immutable | bất kỳ |
-| `LayoutEngine.measure()` | Đo kích thước, gán vị trí, record text `Picture` / `Rect` | background |
-| `DrawSpec` (đa hình) | Giữ kết quả + tự biết `draw(canvas)` | hand-off |
-| `PrecomputedView` | Báo size + uỷ thác vẽ cho spec | UI |
+| `LayoutNode` | Mô tả layout bằng data immutable: text, ảnh, padding, width/height, click callback, children... | bất kỳ |
+| `LayoutEngine.measure()` | Entry point đo layout: chặn main thread, tạo `MeasureContext`, chạy đo root và gắn cache slot nếu caller truyền `id` | background |
+| `MeasureContext` | Quản lý đo child và reuse `DrawSpec` qua cache theo `LayoutNode.id` | background |
+| `MeasurePolicy<N>` | Thuật toán đo cụ thể cho từng loại node: resolve constraint, tính size, gán vị trí child, tạo `DrawSpec` tương ứng | background |
+| `DrawSpec` | Kết quả đã đo: `left/top/width/height`, logic `draw(canvas)`, hit-test, lifecycle attach/detach | hand-off sang UI |
+| `PrecomputedView` / `PrecomputedDelegate` | Giữ spec hiện tại, `requestLayout()` khi size đổi, `invalidate()` khi chỉ cần vẽ lại, dispatch tap tới node clickable | UI |
+
+Nói ngắn gọn: `LayoutNode` là **data**, `MeasurePolicy` là **behavior đo**, còn `DrawSpec` là **kết quả renderable**. `LayoutEngine` không cần biết chi tiết `TextNode`, `ImageNode`, `LinearNode`...; nó chỉ điều phối quá trình đo và cache. Mỗi node tự gọi policy tương ứng, ví dụ `TextNode` gọi `TextMeasurePolicy`, `ImageNode` gọi `ImageMeasurePolicy`, `FlexboxNode` gọi `FlexboxMeasurePolicy`.
+
+Luồng update thường gặp:
+
+```kotlin
+// background thread
+val spec = LayoutEngine.measure(node, Constraints(maxWidth), id = cacheKey)
+
+// main thread
+precomputedView.spec = spec
+```
+
+Cache hoạt động theo `LayoutNode.id`: nếu node mới vẫn là **cùng instance** (`===`) và spec cũ còn hợp lệ dưới constraint mới, engine trả lại spec cũ để bỏ qua phần đo tốn kém như record text `Picture`, tính intrinsic ảnh, layout container... Nếu dữ liệu đổi hoặc constraint không còn phù hợp, node được đo lại như bình thường.
+
+Vì `DrawSpec` có thể giữ tài nguyên nặng (`Picture`, `Drawable`, `Bitmap`, animator state), caller nên gọi `LayoutEngine.evict(id)` khi màn hình/view gắn với cache key bị huỷ hẳn, hoặc `LayoutEngine.clearCache()` khi đổi theme/density hay low-memory.
 
 **Quy tắc vàng:** mọi resource phải resolve sẵn trước khi đưa vào engine — `Bitmap` đã decode, `color` là `Int`, `Typeface` đã load. Engine **không được đụng `Context`**.
 

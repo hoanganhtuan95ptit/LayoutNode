@@ -1,10 +1,10 @@
 package com.simple.ui.precompute.node
 
 import android.graphics.Canvas
-import android.view.View
 import com.simple.ui.precompute.DrawSpec
 import com.simple.ui.precompute.MeasureContext
 import com.simple.ui.precompute.MeasurePolicy
+import com.simple.ui.precompute.PrecomputedRuntime
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LinearNode — mô tả một container xếp children theo chiều ngang / dọc.
@@ -167,12 +167,12 @@ open class GroupSpec(
         for (i in children.indices) children[i].draw(canvas)
     }
 
-    override fun onAttachedToWindow(view: View) {
-        for (i in children.indices) children[i].attach(view)
+    override fun onAttachedToRuntime(runtime: PrecomputedRuntime) {
+        for (i in children.indices) children[i].attach(runtime, runtimeLeft, runtimeTop)
     }
 
-    override fun onDetachedFromWindow(view: View) {
-        for (i in children.indices) children[i].detach(view)
+    override fun onDetachedFromRuntime(runtime: PrecomputedRuntime) {
+        for (i in children.indices) children[i].detach(runtime)
     }
 
     override fun withPosition(newLeft: Int, newTop: Int) =

@@ -4,12 +4,14 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Rect
 import android.graphics.drawable.Animatable
+import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
-import android.view.View
+import android.content.res.Resources
 import com.simple.ui.precompute.DrawSpec
 import com.simple.ui.precompute.MeasurePolicy
 import com.simple.ui.precompute.loader.ImageLoader
 import com.simple.ui.precompute.MeasureContext
+import com.simple.ui.precompute.PrecomputedRuntime
 import com.simple.ui.precompute.image.BigImage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -41,7 +43,8 @@ data class ImageNode(
     override val source: BigImage,
     override val layoutWidth: LayoutDimension = LayoutDimension.WrapContent,
     override val layoutHeight: LayoutDimension = LayoutDimension.WrapContent,
-    override val padding: EdgeInsets = EdgeInsets.ZERO
+    override val padding: EdgeInsets = EdgeInsets.ZERO,
+    override val onClick: (() -> Unit)? = null
 ) : LayoutNode(), ImageMeasureNode {
 
     override fun measure(
@@ -112,7 +115,7 @@ open class ImageMeasurePolicy<N> : MeasurePolicy<N>()
  * sau khi spec đã measure xong (cho UrlSource / ResSource / ...).
  *
  * [drawable] null cho tới khi [ImageLoader] gọi setter,
- * ngay tại [onAttachedToWindow] — case sau giúp tránh flicker khi spec mới
+ * ngay khi gắn vào runtime — case sau giúp tránh flicker khi spec mới
  * thay thế spec cũ cùng [source].
  *
  * Threading: setter của [drawable] luôn được gọi trên main (Glide CustomTarget
@@ -147,14 +150,12 @@ open class ImageSpec(
             // hơn nhiều so với dispatch sang Default rồi bounce về Main.
             value.bounds = value.centerInside(dst)
 
-            // Chỉ gắn callback + start animation khi view đang attached.
-            if (attachedView != null) {
+            // Chỉ gắn callback + start animation khi runtime đang attached.
+            if (runtime != null) {
                 value.callback = drawableCallback
                 (value as? Animatable)?.start()
             }
         }
-
-    private var attachedView: View? = null
 
     /**
      * Scope sống từ attach → detach. Dùng để gọi [ImageLoader.load] off-main,
@@ -170,16 +171,16 @@ open class ImageSpec(
     private val drawableCallback: Drawable.Callback by lazy(LazyThreadSafetyMode.NONE) {
         object : Drawable.Callback {
             override fun invalidateDrawable(who: Drawable) {
-                attachedView?.postInvalidateOnAnimation()
+                this@ImageSpec.requestDraw()
             }
 
             override fun scheduleDrawable(who: Drawable, what: Runnable, `when`: Long) {
                 val delay = `when` - android.os.SystemClock.uptimeMillis()
-                attachedView?.postDelayed(what, delay)
+                this@ImageSpec.runtime?.postDelayed(what, delay)
             }
 
             override fun unscheduleDrawable(who: Drawable, what: Runnable) {
-                attachedView?.removeCallbacks(what)
+                this@ImageSpec.runtime?.removeCallbacks(what)
             }
         }
     }
@@ -188,8 +189,7 @@ open class ImageSpec(
         drawable?.draw(canvas)
     }
 
-    override fun onAttachedToWindow(view: View) {
-        attachedView = view
+    override fun onAttachedToRuntime(runtime: PrecomputedRuntime) {
         val s = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         scope = s
 
@@ -201,15 +201,28 @@ open class ImageSpec(
         // Đã có ảnh từ lần load trước thì không cần load lại.
         if (drawable != null) return
 
+        val immediateDrawable = source.immediateDrawable()
+        if (immediateDrawable != null) {
+
+            drawable = immediateDrawable
+            return
+        }
+
         val loader = ImageLoader.get() ?: return
+        val cachedDrawable = loader.cached(this)
+        if (cachedDrawable != null) {
+
+            drawable = cachedDrawable
+            return
+        }
+
         // Load off-main; nếu detach trước khi xong sẽ tự cancel theo scope.
         s.launch(Dispatchers.Default) {
-            loader.load(this@ImageSpec) { view.postInvalidateOnAnimation() }
+            loader.load(this@ImageSpec) { this@ImageSpec.requestDraw() }
         }
     }
 
-    override fun onDetachedFromWindow(view: View) {
-        attachedView = null
+    override fun onDetachedFromRuntime(runtime: PrecomputedRuntime) {
         val d = drawable
         if (d != null) {
             d.callback = null
@@ -235,7 +248,7 @@ open class ImageSpec(
      * `cached.withPosition(x, y)` — nếu không copy drawable, đường tránh-
      * tệ hơn là re-load qua Glide nếu cache miss).
      *
-     * Chỉ copy drawable; không copy [attachedView]/[scope] — attach lifecycle
+     * Chỉ copy drawable; không copy [runtime]/[scope] — attach lifecycle
      * sẽ được [com.simple.ui.precompute.PrecomputedDelegate] chạy lại trên
      * instance mới.
      */
@@ -262,7 +275,6 @@ open class ImageSpec(
         }
 
         val scale = minOf(
-            1f,
             containerW.toFloat() / sourceW.toFloat(),
             containerH.toFloat() / sourceH.toFloat()
         )
@@ -288,3 +300,13 @@ private fun BigImage.intrinsicHeight(): Int? =
         is Drawable -> value.intrinsicHeight.takeIf { it > 0 }
         else -> null
     }
+
+private fun BigImage.immediateDrawable(): Drawable? =
+    when (val value = source) {
+        is Bitmap -> BitmapDrawable(Resources.getSystem(), value)
+        is Drawable -> value.copyForImageSpec()
+        else -> null
+    }
+
+private fun Drawable.copyForImageSpec(): Drawable =
+    constantState?.newDrawable()?.mutate() ?: mutate()

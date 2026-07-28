@@ -4,6 +4,7 @@ package com.simple.ui.precompute.image
 
 import android.graphics.Bitmap
 import com.bumptech.glide.load.Transformation
+import com.bumptech.glide.load.resource.bitmap.CenterCrop as GlideCenterCrop
 import com.google.auto.service.AutoService
 import jp.wasabeef.glide.transformations.BlurTransformation
 import jp.wasabeef.glide.transformations.ColorFilterTransformation
@@ -19,6 +20,7 @@ import jp.wasabeef.glide.transformations.RoundedCornersTransformation
 class WasabeefBigTransformConvert : BigImageTransformConvert {
 
     override fun convert(transform: BigImageTransform): Transformation<Bitmap>? = when (transform) {
+        is CenterCrop -> GlideCenterCrop()
         is CircleCrop -> CropCircleTransformation()
         is CropSquare -> CropSquareTransformation()
         is Crop -> CropTransformation(

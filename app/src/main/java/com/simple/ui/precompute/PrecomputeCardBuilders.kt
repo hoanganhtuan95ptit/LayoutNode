@@ -261,6 +261,293 @@ class PrecomputeCardBuilders(
         )
     }
 
+    fun buildProgressFlexboxTagsCard(): LayoutNode {
+        val items = listOf(
+            "Kotlin" to 92,
+            "Android" to 88,
+            "Compose" to 74,
+            "RecyclerView" to 81,
+            "Glide" to 69,
+            "Canvas" to 77,
+            "LayoutEngine" to 95,
+            "DrawSpec" to 86,
+            "FlexboxNode" to 79,
+            "MeasurePolicy" to 91,
+            "Picture text" to 66,
+            "Runtime" to 84,
+            "Background" to 58,
+            "ProgressBarNode" to 72,
+            "ConstraintNode" to 89,
+            "Precompute" to 97,
+        )
+
+        return FlexboxNode(
+            flexDirection = FlexDirection.ROW,
+            flexWrap = FlexWrap.WRAP,
+            justifyContent = FlexJustifyContent.FLEX_START,
+            alignItems = FlexAlignItems.CENTER,
+            alignContent = FlexAlignContent.FLEX_START,
+            gap = dp(8),
+            padding = EdgeInsets.all(dp(16)),
+            layoutWidth = LayoutDimension.MatchParent,
+            children = items.mapIndexed { index, (label, progress) ->
+                FlexChild(
+                    order = index,
+                    node = buildProgressTextChip(
+                        label = "$label $progress%",
+                        progress = progress,
+                        progressColor = colorByProgress(progress)
+                    )
+                )
+            }
+        )
+    }
+
+    fun buildProgressFlexboxGridCard(): LayoutNode {
+        val items = List(30) { index ->
+            "Task ${index + 1}" to ((index * 11 + 35) % 100)
+        }
+
+        return FlexboxNode(
+            flexDirection = FlexDirection.ROW,
+            flexWrap = FlexWrap.WRAP,
+            justifyContent = FlexJustifyContent.FLEX_START,
+            alignItems = FlexAlignItems.STRETCH,
+            alignContent = FlexAlignContent.FLEX_START,
+            gap = dp(8),
+            padding = EdgeInsets.all(dp(12)),
+            layoutWidth = LayoutDimension.MatchParent,
+            children = items.mapIndexed { index, (label, progress) ->
+                FlexChild(
+                    order = index,
+                    flexGrow = 1f,
+                    flexShrink = 1f,
+                    flexBasisPercent = 0.31f,
+                    node = buildProgressTextCell(
+                        label = "$label  $progress%",
+                        progress = progress,
+                        progressColor = colorByProgress(progress)
+                    )
+                )
+            }
+        )
+    }
+
+    fun buildProgressFlexboxStatusCard(): LayoutNode {
+        val items = listOf(
+            ProgressChipData("Done", 100, 0xFF2E7D32.toInt()),
+            ProgressChipData("Loading", 64, 0xFF1976D2.toInt()),
+            ProgressChipData("Warning", 48, 0xFFF9A825.toInt()),
+            ProgressChipData("Failed", 22, 0xFFC62828.toInt()),
+            ProgressChipData("Queued", 12, 0xFF607D8B.toInt()),
+            ProgressChipData("Syncing", 73, 0xFF00897B.toInt()),
+            ProgressChipData("Cached", 91, 0xFF5E35B1.toInt()),
+            ProgressChipData("Decoded", 55, 0xFF546E7A.toInt()),
+            ProgressChipData("Measured", 83, 0xFF3949AB.toInt()),
+            ProgressChipData("Drawn", 76, 0xFF6D4C41.toInt()),
+        )
+
+        return FlexboxNode(
+            flexDirection = FlexDirection.ROW,
+            flexWrap = FlexWrap.WRAP,
+            justifyContent = FlexJustifyContent.SPACE_BETWEEN,
+            alignItems = FlexAlignItems.CENTER,
+            alignContent = FlexAlignContent.FLEX_START,
+            gap = dp(10),
+            padding = EdgeInsets.all(dp(16)),
+            layoutWidth = LayoutDimension.MatchParent,
+            children = items.mapIndexed { index, item ->
+                FlexChild(
+                    order = index,
+                    wrapBefore = item.label == "Cached",
+                    node = buildProgressTextChip(
+                        label = "${item.label} ${item.progress}%",
+                        progress = item.progress,
+                        progressColor = item.color,
+                        trackColor = 0xFFF1F3F4.toInt()
+                    )
+                )
+            }
+        )
+    }
+
+    fun buildProgressFlexboxDenseCard(): LayoutNode {
+        return FlexboxNode(
+            flexDirection = FlexDirection.ROW,
+            flexWrap = FlexWrap.WRAP,
+            justifyContent = FlexJustifyContent.FLEX_START,
+            alignItems = FlexAlignItems.CENTER,
+            alignContent = FlexAlignContent.FLEX_START,
+            mainGap = dp(6),
+            crossGap = dp(6),
+            padding = EdgeInsets.all(dp(12)),
+            layoutWidth = LayoutDimension.MatchParent,
+            children = List(80) { index ->
+                val progress = (20 + index * 7) % 100
+                FlexChild(
+                    order = index,
+                    node = buildProgressTextChip(
+                        label = "#${index + 1} $progress%",
+                        progress = progress,
+                        progressColor = colorByProgress(progress),
+                        horizontalPadding = dp(9),
+                        verticalPadding = dp(5),
+                        textSizePx = sp(11f)
+                    )
+                )
+            }
+        )
+    }
+
+    fun buildOutlineFlexboxTagsCard(): LayoutNode {
+        val items = listOf(
+            OutlineChipData("Kotlin", 0xFFE91E63.toInt(), 0x1AE91E63),
+            OutlineChipData("Android", 0xFF2E7D32.toInt(), 0x1A2E7D32),
+            OutlineChipData("Precompute", 0xFF1565C0.toInt(), 0x1A1565C0),
+            OutlineChipData("LayoutEngine", 0xFF6D4C41.toInt(), 0x1A6D4C41),
+            OutlineChipData("FlexboxNode", 0xFF5E35B1.toInt(), 0x1A5E35B1),
+            OutlineChipData("OutlineNode", 0xFF00897B.toInt(), 0x1A00897B),
+            OutlineChipData("TextNode", 0xFFF57C00.toInt(), 0x1AF57C00),
+            OutlineChipData("MeasurePolicy", 0xFF455A64.toInt(), 0x1A455A64),
+            OutlineChipData("DrawSpec", 0xFFC2185B.toInt(), 0x1AC2185B),
+            OutlineChipData("Picture", 0xFF3949AB.toInt(), 0x1A3949AB),
+            OutlineChipData("Runtime", 0xFF00796B.toInt(), 0x1A00796B),
+            OutlineChipData("Recycler item", 0xFF7B1FA2.toInt(), 0x1A7B1FA2),
+            OutlineChipData("Background", 0xFF3F51B5.toInt(), 0x1A3F51B5),
+            OutlineChipData("Constraints", 0xFF5D4037.toInt(), 0x1A5D4037),
+            OutlineChipData("Cache", 0xFFAF7A00.toInt(), 0x1AAF7A00),
+            OutlineChipData("No View child", 0xFF00695C.toInt(), 0x1A00695C),
+        )
+
+        return FlexboxNode(
+            flexDirection = FlexDirection.ROW,
+            flexWrap = FlexWrap.WRAP,
+            justifyContent = FlexJustifyContent.FLEX_START,
+            alignItems = FlexAlignItems.CENTER,
+            alignContent = FlexAlignContent.FLEX_START,
+            gap = dp(8),
+            padding = EdgeInsets.all(dp(16)),
+            layoutWidth = LayoutDimension.MatchParent,
+            children = items.mapIndexed { index, item ->
+                FlexChild(
+                    order = index,
+                    node = buildOutlineTextChip(
+                        label = item.label,
+                        strokeColor = item.strokeColor,
+                        backgroundColor = item.backgroundColor,
+                        textColor = item.strokeColor
+                    )
+                )
+            }
+        )
+    }
+
+    fun buildOutlineFlexboxGridCard(): LayoutNode {
+        val items = List(36) { index ->
+            val color = outlineColorAt(index)
+            OutlineChipData(
+                label = "Cell ${index + 1}",
+                strokeColor = color,
+                backgroundColor = color.withAlpha(0x14)
+            )
+        }
+
+        return FlexboxNode(
+            flexDirection = FlexDirection.ROW,
+            flexWrap = FlexWrap.WRAP,
+            justifyContent = FlexJustifyContent.FLEX_START,
+            alignItems = FlexAlignItems.STRETCH,
+            alignContent = FlexAlignContent.FLEX_START,
+            gap = dp(8),
+            padding = EdgeInsets.all(dp(12)),
+            layoutWidth = LayoutDimension.MatchParent,
+            children = items.mapIndexed { index, item ->
+                FlexChild(
+                    order = index,
+                    flexGrow = 1f,
+                    flexShrink = 1f,
+                    flexBasisPercent = 0.31f,
+                    node = buildOutlineTextCell(
+                        label = item.label,
+                        strokeColor = item.strokeColor,
+                        backgroundColor = item.backgroundColor
+                    )
+                )
+            }
+        )
+    }
+
+    fun buildOutlineFlexboxStatusCard(): LayoutNode {
+        val items = listOf(
+            OutlineStatusChipData("Idle", 0xFF607D8B.toInt(), false),
+            OutlineStatusChipData("Measuring", 0xFF1976D2.toInt(), true),
+            OutlineStatusChipData("Ready", 0xFF2E7D32.toInt(), false),
+            OutlineStatusChipData("Dirty", 0xFFF9A825.toInt(), true),
+            OutlineStatusChipData("Invalidated", 0xFFE53935.toInt(), true),
+            OutlineStatusChipData("Cached", 0xFF5E35B1.toInt(), false),
+            OutlineStatusChipData("Attached", 0xFF00897B.toInt(), false),
+            OutlineStatusChipData("Detached", 0xFF6D4C41.toInt(), true),
+            OutlineStatusChipData("Draw only", 0xFF3949AB.toInt(), false),
+            OutlineStatusChipData("Remeasure", 0xFFC2185B.toInt(), true),
+            OutlineStatusChipData("Static", 0xFF00796B.toInt(), false),
+            OutlineStatusChipData("Dynamic", 0xFFF57C00.toInt(), true),
+        )
+
+        return FlexboxNode(
+            flexDirection = FlexDirection.ROW,
+            flexWrap = FlexWrap.WRAP,
+            justifyContent = FlexJustifyContent.SPACE_BETWEEN,
+            alignItems = FlexAlignItems.CENTER,
+            alignContent = FlexAlignContent.FLEX_START,
+            gap = dp(10),
+            padding = EdgeInsets.all(dp(16)),
+            layoutWidth = LayoutDimension.MatchParent,
+            children = items.mapIndexed { index, item ->
+                FlexChild(
+                    order = index,
+                    wrapBefore = item.label == "Attached",
+                    node = buildOutlineTextChip(
+                        label = item.label,
+                        strokeColor = item.strokeColor,
+                        backgroundColor = item.strokeColor.withAlpha(0x12),
+                        textColor = item.strokeColor,
+                        dashed = item.dashed
+                    )
+                )
+            }
+        )
+    }
+
+    fun buildOutlineFlexboxDenseCard(): LayoutNode {
+        return FlexboxNode(
+            flexDirection = FlexDirection.ROW,
+            flexWrap = FlexWrap.WRAP,
+            justifyContent = FlexJustifyContent.FLEX_START,
+            alignItems = FlexAlignItems.CENTER,
+            alignContent = FlexAlignContent.FLEX_START,
+            mainGap = dp(6),
+            crossGap = dp(6),
+            padding = EdgeInsets.all(dp(12)),
+            layoutWidth = LayoutDimension.MatchParent,
+            children = List(96) { index ->
+                val color = outlineColorAt(index)
+                FlexChild(
+                    order = index,
+                    node = buildOutlineTextChip(
+                        label = "N${index + 1}",
+                        strokeColor = color,
+                        backgroundColor = color.withAlpha(0x10),
+                        textColor = 0xFF202124.toInt(),
+                        horizontalPadding = dp(9),
+                        verticalPadding = dp(5),
+                        textSizePx = sp(11f),
+                        dashed = index % 7 == 0
+                    )
+                )
+            }
+        )
+    }
+
     fun buildScoreGaugeSpec(progress: Int, grade: String = "", label: String = "ĐIỂM", sizePx: Int, strokeWidthPx: Float = dp(1).toFloat()): LayoutNode = ConstraintNode(
         layoutWidth = LayoutDimension.Fixed(sizePx),
         layoutHeight = LayoutDimension.Fixed(sizePx),
@@ -277,7 +564,231 @@ class PrecomputeCardBuilders(
         )
     )
 
+    private fun buildProgressTextChip(
+        label: String,
+        progress: Int,
+        progressColor: Int,
+        trackColor: Int = 0xFFE8EAED.toInt(),
+        horizontalPadding: Int = dp(12),
+        verticalPadding: Int = dp(7),
+        textSizePx: Float = sp(12f)
+    ): LayoutNode = ConstraintNode(
+        children = listOf(
+            ConstraintChild(
+                id = "bg",
+                node = ProgressBarNode(
+                    progress = progress.coerceIn(0, 100),
+                    max = 100,
+                    trackColor = trackColor,
+                    progressColor = progressColor,
+                    cornerRadius = dp(18).toFloat(),
+                    layoutWidth = LayoutDimension.MatchParent,
+                    layoutHeight = LayoutDimension.MatchParent
+                ),
+                startToStartOf = "text",
+                endToEndOf = "text",
+                topToTopOf = "text",
+                bottomToBottomOf = "text",
+                width = LayoutDimension.MatchParent,
+                height = LayoutDimension.MatchParent
+            ),
+            ConstraintChild(
+                id = "text",
+                node = TextNode(
+                    text = BigText(label),
+                    textSizePx = textSizePx,
+                    color = 0xFF202124.toInt(),
+                    typeface = Typeface.DEFAULT_BOLD,
+                    maxLines = 1,
+                    padding = EdgeInsets.symmetric(h = horizontalPadding, v = verticalPadding)
+                ),
+                startToStartOf = ConstraintNode.PARENT,
+                topToTopOf = ConstraintNode.PARENT
+            )
+        )
+    )
+
+    private fun buildProgressTextCell(
+        label: String,
+        progress: Int,
+        progressColor: Int
+    ): LayoutNode = ConstraintNode(
+        layoutWidth = LayoutDimension.MatchParent,
+        layoutHeight = LayoutDimension.Fixed(dp(40)),
+        children = listOf(
+            ConstraintChild(
+                id = "bg",
+                node = ProgressBarNode(
+                    progress = progress.coerceIn(0, 100),
+                    max = 100,
+                    trackColor = 0xFFECEFF1.toInt(),
+                    progressColor = progressColor,
+                    cornerRadius = dp(10).toFloat(),
+                    layoutWidth = LayoutDimension.MatchParent,
+                    layoutHeight = LayoutDimension.MatchParent
+                ),
+                startToStartOf = ConstraintNode.PARENT,
+                endToEndOf = ConstraintNode.PARENT,
+                topToTopOf = ConstraintNode.PARENT,
+                bottomToBottomOf = ConstraintNode.PARENT,
+                width = LayoutDimension.MatchParent,
+                height = LayoutDimension.MatchParent
+            ),
+            ConstraintChild(
+                id = "text",
+                node = TextNode(
+                    text = BigText(label),
+                    textSizePx = sp(12f),
+                    color = 0xFF202124.toInt(),
+                    typeface = Typeface.DEFAULT_BOLD,
+                    maxLines = 1,
+                    padding = EdgeInsets.symmetric(h = dp(8), v = dp(7)),
+                    layoutWidth = LayoutDimension.MatchParent
+                ),
+                startToStartOf = ConstraintNode.PARENT,
+                endToEndOf = ConstraintNode.PARENT,
+                topToTopOf = ConstraintNode.PARENT,
+                bottomToBottomOf = ConstraintNode.PARENT,
+                width = LayoutDimension.MatchParent
+            )
+        )
+    )
+
+    private fun buildOutlineTextChip(
+        label: String,
+        strokeColor: Int,
+        backgroundColor: Int,
+        textColor: Int,
+        horizontalPadding: Int = dp(12),
+        verticalPadding: Int = dp(7),
+        textSizePx: Float = sp(12f),
+        dashed: Boolean = false
+    ): LayoutNode = ConstraintNode(
+        children = listOf(
+            ConstraintChild(
+                id = "outline",
+                node = OutlineNode(
+                    backgroundColor = backgroundColor,
+                    strokeColor = strokeColor,
+                    strokeWidth = dp(1).toFloat(),
+                    cornerRadius = dp(18).toFloat(),
+                    dashWidth = if (dashed) dp(5).toFloat() else 0f,
+                    dashGap = if (dashed) dp(4).toFloat() else 0f,
+                    layoutWidth = LayoutDimension.MatchParent,
+                    layoutHeight = LayoutDimension.MatchParent
+                ),
+                startToStartOf = "text",
+                endToEndOf = "text",
+                topToTopOf = "text",
+                bottomToBottomOf = "text",
+                width = LayoutDimension.MatchParent,
+                height = LayoutDimension.MatchParent
+            ),
+            ConstraintChild(
+                id = "text",
+                node = TextNode(
+                    text = BigText(label),
+                    textSizePx = textSizePx,
+                    color = textColor,
+                    typeface = Typeface.DEFAULT_BOLD,
+                    maxLines = 1,
+                    padding = EdgeInsets.symmetric(h = horizontalPadding, v = verticalPadding)
+                ),
+                startToStartOf = ConstraintNode.PARENT,
+                topToTopOf = ConstraintNode.PARENT
+            )
+        )
+    )
+
+    private fun buildOutlineTextCell(
+        label: String,
+        strokeColor: Int,
+        backgroundColor: Int
+    ): LayoutNode = ConstraintNode(
+        layoutWidth = LayoutDimension.MatchParent,
+        layoutHeight = LayoutDimension.Fixed(dp(42)),
+        children = listOf(
+            ConstraintChild(
+                id = "outline",
+                node = OutlineNode(
+                    backgroundColor = backgroundColor,
+                    strokeColor = strokeColor,
+                    strokeWidth = dp(1).toFloat(),
+                    cornerRadius = dp(10).toFloat(),
+                    layoutWidth = LayoutDimension.MatchParent,
+                    layoutHeight = LayoutDimension.MatchParent
+                ),
+                startToStartOf = ConstraintNode.PARENT,
+                endToEndOf = ConstraintNode.PARENT,
+                topToTopOf = ConstraintNode.PARENT,
+                bottomToBottomOf = ConstraintNode.PARENT,
+                width = LayoutDimension.MatchParent,
+                height = LayoutDimension.MatchParent
+            ),
+            ConstraintChild(
+                id = "text",
+                node = TextNode(
+                    text = BigText(label),
+                    textSizePx = sp(12f),
+                    color = 0xFF202124.toInt(),
+                    typeface = Typeface.DEFAULT_BOLD,
+                    maxLines = 1,
+                    padding = EdgeInsets.symmetric(h = dp(8), v = dp(8)),
+                    layoutWidth = LayoutDimension.MatchParent
+                ),
+                startToStartOf = ConstraintNode.PARENT,
+                endToEndOf = ConstraintNode.PARENT,
+                topToTopOf = ConstraintNode.PARENT,
+                bottomToBottomOf = ConstraintNode.PARENT,
+                width = LayoutDimension.MatchParent
+            )
+        )
+    )
+
+    private fun colorByProgress(progress: Int): Int =
+        when {
+            progress >= 80 -> 0xFF43A047.toInt()
+            progress >= 60 -> 0xFF1E88E5.toInt()
+            progress >= 40 -> 0xFFFFB300.toInt()
+            else -> 0xFFE53935.toInt()
+        }
+
+    private fun outlineColorAt(index: Int): Int {
+        val colors = intArrayOf(
+            0xFFE91E63.toInt(),
+            0xFF2E7D32.toInt(),
+            0xFF1565C0.toInt(),
+            0xFF6D4C41.toInt(),
+            0xFF5E35B1.toInt(),
+            0xFF00897B.toInt(),
+            0xFFF57C00.toInt(),
+            0xFF455A64.toInt()
+        )
+        return colors[index % colors.size]
+    }
+
+    private fun Int.withAlpha(alpha: Int): Int =
+        (this and 0x00FFFFFF) or (alpha.coerceIn(0, 255) shl 24)
+
     private fun dp(value: Int): Int = (value * dp).toInt()
 
     private fun sp(value: Float): Float = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, value, activity.resources.displayMetrics)
+
+    private data class ProgressChipData(
+        val label: String,
+        val progress: Int,
+        val color: Int
+    )
+
+    private data class OutlineChipData(
+        val label: String,
+        val strokeColor: Int,
+        val backgroundColor: Int
+    )
+
+    private data class OutlineStatusChipData(
+        val label: String,
+        val strokeColor: Int,
+        val dashed: Boolean
+    )
 }

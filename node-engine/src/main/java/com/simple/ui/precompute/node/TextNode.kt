@@ -57,7 +57,8 @@ data class TextNode(
     override val padding: EdgeInsets = EdgeInsets.ZERO,
     override val layoutWidth: LayoutDimension = LayoutDimension.WrapContent,
     override val layoutHeight: LayoutDimension = LayoutDimension.WrapContent,
-    override val textPaintDensity: Float = Resources.getSystem().displayMetrics.density
+    override val textPaintDensity: Float = Resources.getSystem().displayMetrics.density,
+    override val onClick: (() -> Unit)? = null
 ) : LayoutNode(), TextMeasureNode {
 
     override fun measure(

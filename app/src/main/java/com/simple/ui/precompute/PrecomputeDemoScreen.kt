@@ -1,12 +1,11 @@
 package com.simple.ui.precompute
 
-import android.graphics.Color
-import android.graphics.Typeface
-import android.view.Gravity
-import android.widget.LinearLayout
-import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.LinearLayoutManager
+import com.simple.adapter.MultiAdapter
+import com.simple.adapter.MultiRecyclerView
+import com.simple.adapter.ViewItem
 import com.simple.t.R
 import com.simple.ui.precompute.image.BigImage
 import com.simple.ui.precompute.loader.GlideImageLoader
@@ -24,41 +23,58 @@ class PrecomputeDemoScreen(
     private val cardWidth by lazy { activity.resources.displayMetrics.widthPixels - (32 * dp).toInt() }
 
     fun render() {
-        val container = activity.findViewById<LinearLayout>(R.id.container)
-        val items = PrecomputeDemoData.items
-        val profiles = PrecomputeDemoData.profiles
-        val notes = PrecomputeDemoData.notes
-        val iconSource = BigImage(R.mipmap.ic_launcher)
-        val dp48 = (48 * dp).toInt()
 
-        ImageLoader.install(GlideImageLoader(activity))
+        val recyclerView = activity.findViewById<MultiRecyclerView>(R.id.recyclerView)
+        val iconSource = BigImage(DEMO_ICON_URL)
+        val dp48 = dp(48)
+
+        if (ImageLoader.get() == null) {
+
+            ImageLoader.install(GlideImageLoader(activity))
+        }
+        setupRecyclerView(recyclerView)
 
         activity.lifecycleScope.launch {
-            PrecomputeUiSectionRenderer(
-                activity = activity,
-                container = container,
-                cardWidth = cardWidth,
-                iconSource = iconSource,
-                iconSizePx = dp48,
-                items = items,
-                profiles = profiles,
-                notes = notes,
-            ).render()
 
-            container.addView(TextView(activity).apply {
-                text = "${items.size * 4 + profiles.size + 4 + notes.size + 6} cards — LinearNode + ConstraintNode + OutlineNode + ImageTransform + PhoneticChip + ScoreGauge + ProgressBarNode + XML NoteRow + TrySpeakChip + LineNode + FlexboxNode, measured on bg thread"
-                setTextColor(Color.GRAY)
-                textSize = 12f
-                gravity = Gravity.CENTER
-                setPadding(0, (16 * dp).toInt(), 0, (24 * dp).toInt())
-            })
+            val viewItems = withContext(Dispatchers.Default) {
+
+                PrecomputeUiSectionRenderer(
+                    activity = activity,
+                    cardWidth = cardWidth,
+                    iconSource = iconSource,
+                    iconSizePx = dp48,
+                    items = PrecomputeDemoData.items,
+                    profiles = PrecomputeDemoData.profiles,
+                    notes = PrecomputeDemoData.notes,
+                ).buildItems()
+            }
+
+            val adapter = recyclerView.adapter as? MultiAdapter ?: return@launch
+            adapter.submitList(
+                viewItems,
+                adapter = listOf(
+                    DemoTextAdapter::class.java.name,
+                    PrecomputedCardAdapter::class.java.name
+                )
+            )
         }
+    }
+
+    private fun setupRecyclerView(recyclerView: MultiRecyclerView) {
+
+        recyclerView.layoutManager = LinearLayoutManager(activity)
+    }
+
+    private fun dp(value: Int): Int = (value * dp).toInt()
+
+    private companion object {
+
+        const val DEMO_ICON_URL = "https://developer.android.com/static/images/brand/Android_Robot.png"
     }
 }
 
 private class PrecomputeUiSectionRenderer(
     private val activity: AppCompatActivity,
-    private val container: LinearLayout,
     private val cardWidth: Int,
     private val iconSource: BigImage,
     private val iconSizePx: Int,
@@ -68,148 +84,233 @@ private class PrecomputeUiSectionRenderer(
 ) {
 
     private val builders = PrecomputeCardBuilders(activity)
+    private val dp by lazy { activity.resources.displayMetrics.density }
+    private val constraints = Constraints(cardWidth)
 
-    suspend fun render() {
-        val helper = PrecomputeUiHelpers(activity)
+    fun buildItems(): List<ViewItem> {
 
-        helper.addSectionLabel(container, "① LinearNode  —  Row / Column")
-        helper.addCards(
-            container,
-            withContext(Dispatchers.Default) {
-                items.map { item ->
-                    LayoutEngine.measure(
-                        builders.buildLinearCard(item.word, item.ipa, item.meaning, iconSource, iconSizePx),
-                        Constraints(cardWidth)
-                    )
-                }
+        val out = ArrayList<ViewItem>()
+        addLinearCards(out)
+        addConstraintCards(out)
+        addProfileCards(out)
+        addWrapContentCards(out)
+        addLoadingOutlineCard(out)
+        addTransformCard(out)
+        addPhoneticChipCards(out)
+        addScoreGaugeCards(out)
+        addProgressBarCards(out)
+        addNoteCards(out)
+        addTrySpeakCard(out)
+        addDashedLineTextCard(out)
+        addFlexboxTagsCard(out)
+        addFlexboxProgressExamples(out)
+        addFlexboxOutlineExamples(out)
+        addColorChangingFlexboxCard(out)
+        addFooter(out)
+        return out
+    }
+
+    private fun addLinearCards(out: MutableList<ViewItem>) {
+
+        addSection(out, "① LinearNode  —  Row / Column")
+        addCards(out, "linear") {
+            items.map { item ->
+                builders.buildLinearCard(item.word, item.ipa, item.meaning, iconSource, iconSizePx)
             }
-        )
+        }
+    }
 
-        helper.addSectionLabel(container, "② ConstraintNode  —  tương tự ConstraintLayout")
-        helper.addCards(
-            container,
-            withContext(Dispatchers.Default) {
-                items.map { item ->
-                    LayoutEngine.measure(
-                        builders.buildConstraintCard(item.word, item.ipa, item.meaning, iconSource, iconSizePx),
-                        Constraints(cardWidth)
-                    )
-                }
-            }
-        )
+    private fun addConstraintCards(out: MutableList<ViewItem>) {
 
-        helper.addSectionLabel(container, "③ ConstraintNode  —  view con leo nhau (view-to-view)")
-        helper.addCards(
-            container,
-            withContext(Dispatchers.Default) {
-                profiles.map { profile ->
-                    LayoutEngine.measure(
-                        builders.buildProfileConstraintCard(profile.name, profile.tag, profile.role, iconSource, iconSizePx),
-                        Constraints(cardWidth)
-                    )
-                }
+        addSection(out, "② ConstraintNode  —  tương tự ConstraintLayout")
+        addCards(out, "constraint") {
+            items.map { item ->
+                builders.buildConstraintCard(item.word, item.ipa, item.meaning, iconSource, iconSizePx)
             }
-        )
+        }
+    }
 
-        helper.addSectionLabel(container, "④ ConstraintNode  —  WrapContent (vừa khít nội dung)")
-        helper.addCards(
-            container,
-            withContext(Dispatchers.Default) {
-                listOf(
-                    LayoutEngine.measure(builders.buildWrapContentTagsCard(), Constraints(cardWidth)),
-                    LayoutEngine.measure(builders.buildWrapContentCenterCard(), Constraints(cardWidth))
-                )
-            }
-        )
+    private fun addProfileCards(out: MutableList<ViewItem>) {
 
-        helper.addSectionLabel(container, "⑤ OutlineNode  —  viền loading bo góc")
-        helper.addCards(
-            container,
-            withContext(Dispatchers.Default) {
-                listOf(LayoutEngine.measure(builders.buildLoadingOutlineCard(), Constraints(cardWidth)))
+        addSection(out, "③ ConstraintNode  —  view con leo nhau (view-to-view)")
+        addCards(out, "profile") {
+            profiles.map { profile ->
+                builders.buildProfileConstraintCard(profile.name, profile.tag, profile.role, iconSource, iconSizePx)
             }
-        )
+        }
+    }
 
-        helper.addSectionLabel(container, "⑥ ImageNode  —  Glide transform (Circle / Rounded)")
-        helper.addCards(
-            container,
-            withContext(Dispatchers.Default) {
-                listOf(LayoutEngine.measure(builders.buildTransformCard(iconSizePx), Constraints(cardWidth)))
-            }
-        )
+    private fun addWrapContentCards(out: MutableList<ViewItem>) {
 
-        helper.addSectionLabel(container, "⑦ PhoneticChip  —  từ XML → Node")
-        helper.addCards(
-            container,
-            withContext(Dispatchers.Default) {
-                items.map { item ->
-                    LayoutEngine.measure(builders.buildPhoneticChip("${item.word}\n${item.ipa}"), Constraints(cardWidth))
-                }
-            }
-        )
+        addSection(out, "④ ConstraintNode  —  WrapContent (vừa khít nội dung)")
+        addCards(out, "wrap") {
+            listOf(
+                builders.buildWrapContentTagsCard(),
+                builders.buildWrapContentCenterCard()
+            )
+        }
+    }
 
-        helper.addSectionLabel(container, "⑧ ScoreGauge  —  GaugeArcNode + GaugeScoreNode")
-        helper.addCards(
-            container,
-            withContext(Dispatchers.Default) {
-                items.map {
-                    LayoutEngine.measure(builders.buildScoreGaugeSpec(progress = 90, sizePx = helper.dp(160)), Constraints(cardWidth))
-                }
-            }
-        )
+    private fun addLoadingOutlineCard(out: MutableList<ViewItem>) {
 
-        helper.addSectionLabel(container, "⑨ ProgressBarNode  —  thanh tiến độ ngang")
-        helper.addCards(
-            container,
-            withContext(Dispatchers.Default) {
-                listOf(
-                    LayoutEngine.measure(builders.buildProgressBarCard("Listening accuracy", 68, 100, 0xFF1B998B.toInt()), Constraints(cardWidth)),
-                    LayoutEngine.measure(builders.buildProgressBarCard("Speaking fluency", 42, 100, 0xFFE76F51.toInt()), Constraints(cardWidth)),
-                    LayoutEngine.measure(builders.buildProgressBarCard("Daily goal", 9, 12, 0xFF5B7CFA.toInt()), Constraints(cardWidth))
-                )
-            }
-        )
+        addSection(out, "⑤ OutlineNode  —  viền loading bo góc")
+        addCards(out, "outline") {
+            listOf(builders.buildLoadingOutlineCard())
+        }
+    }
 
-        helper.addSectionLabel(container, "⑩ XML NoteRow  —  LinearLayout → Node")
-        helper.addCards(
-            container,
-            withContext(Dispatchers.Default) {
-                notes.map { note ->
-                    LayoutEngine.measure(builders.buildNoteRowFromXml(note.title, note.note, iconSource), Constraints(cardWidth))
-                }
-            }
-        )
+    private fun addTransformCard(out: MutableList<ViewItem>) {
 
-        helper.addSectionLabel(container, "⑪ TrySpeakChip  —  ảnh mẫu → node cũ")
-        helper.addCards(
-            container,
-            withContext(Dispatchers.Default) {
-                listOf(LayoutEngine.measure(builders.buildTrySpeakChipFromImage(), Constraints(cardWidth)))
-            }
-        )
+        addSection(out, "⑥ ImageNode  —  Glide transform (Circle / Rounded)")
+        addCards(out, "transform") {
+            listOf(builders.buildTransformCard(iconSizePx))
+        }
+    }
 
-        helper.addSectionLabel(container, "⑫ DashedLineText  —  LineNode + TextNode")
-        helper.addCards(
-            container,
-            withContext(Dispatchers.Default) {
-                listOf(LayoutEngine.measure(builders.buildDashedLineTextFromImage(), Constraints(cardWidth)))
-            }
-        )
+    private fun addPhoneticChipCards(out: MutableList<ViewItem>) {
 
-        helper.addSectionLabel(container, "⑬ FlexboxNode  —  wrap tags giống FlexboxLayout")
-        helper.addCards(
-            container,
-            withContext(Dispatchers.Default) {
-                listOf(LayoutEngine.measure(builders.buildFlexboxTagsCard(), Constraints(cardWidth)))
+        addSection(out, "⑦ PhoneticChip  —  từ XML → Node")
+        addCards(out, "phonetic") {
+            items.map { item ->
+                builders.buildPhoneticChip("${item.word}\n${item.ipa}")
             }
-        )
+        }
+    }
 
-        helper.addSectionLabel(container, "⑭ Custom FlexboxNode  —  đổi màu node id aaa mỗi 5s")
-        helper.addCards(
-            container,
-            withContext(Dispatchers.Default) {
-                listOf(LayoutEngine.measure(builders.buildColorChangingFlexboxCard(), Constraints(cardWidth)))
+    private fun addScoreGaugeCards(out: MutableList<ViewItem>) {
+
+        addSection(out, "⑧ ScoreGauge  —  GaugeArcNode + GaugeScoreNode")
+        addCards(out, "score") {
+            items.map {
+                builders.buildScoreGaugeSpec(progress = 90, sizePx = dp(160))
             }
+        }
+    }
+
+    private fun addProgressBarCards(out: MutableList<ViewItem>) {
+
+        addSection(out, "⑨ ProgressBarNode  —  thanh tiến độ ngang")
+        addCards(out, "progress") {
+            listOf(
+                builders.buildProgressBarCard("Listening accuracy", 68, 100, 0xFF1B998B.toInt()),
+                builders.buildProgressBarCard("Speaking fluency", 42, 100, 0xFFE76F51.toInt()),
+                builders.buildProgressBarCard("Daily goal", 9, 12, 0xFF5B7CFA.toInt())
+            )
+        }
+    }
+
+    private fun addNoteCards(out: MutableList<ViewItem>) {
+
+        addSection(out, "⑩ XML NoteRow  —  LinearLayout → Node")
+        addCards(out, "note") {
+            notes.map { note ->
+                builders.buildNoteRowFromXml(note.title, note.note, iconSource)
+            }
+        }
+    }
+
+    private fun addTrySpeakCard(out: MutableList<ViewItem>) {
+
+        addSection(out, "⑪ TrySpeakChip  —  ảnh mẫu → node cũ")
+        addCards(out, "try-speak") {
+            listOf(builders.buildTrySpeakChipFromImage())
+        }
+    }
+
+    private fun addDashedLineTextCard(out: MutableList<ViewItem>) {
+
+        addSection(out, "⑫ DashedLineText  —  LineNode + TextNode")
+        addCards(out, "dashed-line") {
+            listOf(builders.buildDashedLineTextFromImage())
+        }
+    }
+
+    private fun addFlexboxTagsCard(out: MutableList<ViewItem>) {
+
+        addSection(out, "⑬ FlexboxNode  —  wrap tags giống FlexboxLayout")
+        addCards(out, "flexbox") {
+            listOf(builders.buildFlexboxTagsCard())
+        }
+    }
+
+    private fun addFlexboxProgressExamples(out: MutableList<ViewItem>) {
+
+        addSection(out, "⑭ FlexboxNode  —  nhiều text item có ProgressBarNode làm nền")
+        addCards(out, "flexbox-progress") {
+            listOf(
+                builders.buildProgressFlexboxTagsCard(),
+                builders.buildProgressFlexboxGridCard(),
+                builders.buildProgressFlexboxStatusCard(),
+                builders.buildProgressFlexboxDenseCard()
+            )
+        }
+    }
+
+    private fun addColorChangingFlexboxCard(out: MutableList<ViewItem>) {
+
+        addSection(out, "⑯ Custom FlexboxNode  —  đổi màu node id aaa mỗi 5s")
+        addCards(out, "color-flexbox") {
+            listOf(builders.buildColorChangingFlexboxCard())
+        }
+    }
+
+    private fun addFlexboxOutlineExamples(out: MutableList<ViewItem>) {
+
+        addSection(out, "⑮ FlexboxNode  —  nhiều TextNode có OutlineNode làm nền")
+        addCards(out, "flexbox-outline") {
+            listOf(
+                builders.buildOutlineFlexboxTagsCard(),
+                builders.buildOutlineFlexboxGridCard(),
+                builders.buildOutlineFlexboxStatusCard(),
+                builders.buildOutlineFlexboxDenseCard()
+            )
+        }
+    }
+
+    private fun addFooter(out: MutableList<ViewItem>) {
+
+        val totalCards = out.count { it is PrecomputedCardItem }
+        out.add(
+            DemoTextItem(
+                id = "footer",
+                text = "$totalCards cards — RecyclerView + MultiAdapter + PrecomputedView, measured on bg thread",
+                style = DemoTextStyle.FOOTER,
+                topMarginPx = dp(16),
+                bottomMarginPx = dp(24)
+            )
         )
     }
+
+    private fun addSection(out: MutableList<ViewItem>, label: String) {
+
+        val index = out.size
+        out.add(
+            DemoTextItem(
+                id = "section-$index",
+                text = label,
+                style = DemoTextStyle.SECTION,
+                topMarginPx = dp(20)
+            )
+        )
+    }
+
+    private fun addCards(
+        out: MutableList<ViewItem>,
+        prefix: String,
+        nodeProvider: () -> List<com.simple.ui.precompute.node.LayoutNode>
+    ) {
+
+        nodeProvider().forEachIndexed { index, node ->
+
+            out.add(
+                PrecomputedCardItem(
+                    id = "$prefix-$index",
+                    spec = LayoutEngine.measure(node, constraints),
+                    topMarginPx = dp(10)
+                )
+            )
+        }
+    }
+
+    private fun dp(value: Int): Int = (value * dp).toInt()
 }

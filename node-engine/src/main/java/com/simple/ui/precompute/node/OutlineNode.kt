@@ -1,6 +1,5 @@
 package com.simple.ui.precompute.node
 
-import android.animation.ValueAnimator
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.DashPathEffect
@@ -8,12 +7,10 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.PathMeasure
 import android.graphics.RectF
-import android.os.SystemClock
-import android.view.View
-import android.view.animation.LinearInterpolator
 import com.simple.ui.precompute.DrawSpec
 import com.simple.ui.precompute.MeasureContext
 import com.simple.ui.precompute.MeasurePolicy
+import com.simple.ui.precompute.PrecomputedRuntime
 
 enum class OutlineState { IDLE, LOADING, HIDDEN }
 
@@ -196,8 +193,8 @@ open class OutlineSpec(
             val coerced = value.coerceAtLeast(50L)
             if (field == coerced) return
             field = coerced
-            // Re-create animator so the new duration takes effect immediately.
-            if (animator != null) {
+            // Re-register frame callback so the new duration takes effect immediately.
+            if (frameRegistration != null) {
                 stopAnimating()
                 startAnimating()
             }
@@ -234,9 +231,12 @@ open class OutlineSpec(
     private var segLen = state.targetSegmentLength()
     private var targetSegLen = segLen
 
-    private var animator: ValueAnimator? = null
-    private var attachedView: View? = null
+    private var frameRegistration: PrecomputedRuntime.FrameRegistration? = null
     private var lastFrameMs: Long = 0L
+    private val frameCallback = PrecomputedRuntime.FrameCallback { frameTimeNanos ->
+
+        onFrame(frameTimeNanos)
+    }
 
     init {
         updateDashEffect()
@@ -292,14 +292,12 @@ open class OutlineSpec(
         drawOutline(canvas)
     }
 
-    override fun onAttachedToWindow(view: View) {
-        attachedView = view
+    override fun onAttachedToRuntime(runtime: PrecomputedRuntime) {
         if (needsAnimating(internalState)) startAnimating()
     }
 
-    override fun onDetachedFromWindow(view: View) {
+    override fun onDetachedFromRuntime(runtime: PrecomputedRuntime) {
         stopAnimating()
-        attachedView = null
     }
 
     override fun withPosition(newLeft: Int, newTop: Int): DrawSpec =
@@ -388,24 +386,27 @@ open class OutlineSpec(
         }
 
     private fun startAnimating() {
-        if (attachedView == null || animator != null) return
-        lastFrameMs = SystemClock.elapsedRealtime()
-        animator = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = loadingDurationMs
-            repeatCount = ValueAnimator.INFINITE
-            interpolator = LinearInterpolator()
-            addUpdateListener { onFrame() }
-            start()
-        }
+        val runtime = runtime ?: return
+        if (frameRegistration != null) return
+
+        lastFrameMs = 0L
+        frameRegistration = runtime.registerFrameCallback(frameCallback)
     }
 
     private fun stopAnimating() {
-        animator?.cancel()
-        animator = null
+        frameRegistration?.close()
+        frameRegistration = null
     }
 
-    private fun onFrame() {
-        val now = SystemClock.elapsedRealtime()
+    private fun onFrame(frameTimeNanos: Long) {
+        val now = frameTimeNanos / 1_000_000L
+        if (lastFrameMs == 0L) {
+
+            lastFrameMs = now
+            invalidate()
+            return
+        }
+
         val dt = (now - lastFrameMs).coerceAtLeast(0L)
         lastFrameMs = now
 
@@ -444,7 +445,7 @@ open class OutlineSpec(
     }
 
     private fun invalidate() {
-        attachedView?.postInvalidateOnAnimation()
+        requestDraw()
     }
 
     private fun copyTo(newLeft: Int, newTop: Int, newWidth: Int, newHeight: Int): OutlineSpec =

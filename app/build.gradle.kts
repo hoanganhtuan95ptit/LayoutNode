@@ -40,9 +40,17 @@ kotlin {
     }
 }
 
+configurations.configureEach {
+    resolutionStrategy.force(
+        "androidx.core:core:1.15.0",
+        "androidx.core:core-ktx:1.15.0"
+    )
+}
+
 dependencies {
     implementation(project(":node-engine"))
     implementation(project(":glide-loader"))
+    implementation("com.github.hoanganhtuan95ptit:adapter:1.0.6")
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.core.ktx)
     implementation(libs.material)

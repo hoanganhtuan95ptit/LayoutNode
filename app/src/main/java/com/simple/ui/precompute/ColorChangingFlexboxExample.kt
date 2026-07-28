@@ -6,7 +6,6 @@ import android.graphics.Color
 import android.graphics.Picture
 import android.graphics.Typeface
 import android.text.StaticLayout
-import android.view.View
 import com.simple.ui.precompute.node.Constraints
 import com.simple.ui.precompute.node.EdgeInsets
 import com.simple.ui.precompute.node.FlexAlignContent
@@ -100,9 +99,9 @@ open class ColorChangingFlexboxSpec(
     private var scope: CoroutineScope? = null
     private var colorIndex = 0
 
-    override fun onAttachedToWindow(view: View) {
+    override fun onAttachedToRuntime(runtime: PrecomputedRuntime) {
 
-        super.onAttachedToWindow(view)
+        super.onAttachedToRuntime(runtime)
         val nextScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         scope = nextScope
         nextScope.launch {
@@ -111,16 +110,16 @@ open class ColorChangingFlexboxSpec(
 
                 delay(intervalMs.coerceAtLeast(1L))
                 updateTargetColor()
-                view.postInvalidateOnAnimation()
+                requestDraw()
             }
         }
     }
 
-    override fun onDetachedFromWindow(view: View) {
+    override fun onDetachedFromRuntime(runtime: PrecomputedRuntime) {
 
         scope?.cancel()
         scope = null
-        super.onDetachedFromWindow(view)
+        super.onDetachedFromRuntime(runtime)
     }
 
     override fun withPosition(newLeft: Int, newTop: Int): ColorChangingFlexboxSpec =

@@ -30,14 +30,15 @@ interface BackgroundMeasureNode {
 
 data class BackgroundNode(
     override val backgroundColor: Int = Color.TRANSPARENT,
-    override val strokeColor: Int = Color.BLACK,
-    override val strokeWidth: Float = 1f,
+    override val strokeColor: Int = Color.TRANSPARENT,
+    override val strokeWidth: Float = 0f,
     override val cornerRadius: Float = 0f,
     override val dashWidth: Float = 0f,
     override val dashGap: Float = 0f,
     override val padding: EdgeInsets = EdgeInsets.ZERO,
     override val layoutWidth: LayoutDimension = LayoutDimension.WrapContent,
-    override val layoutHeight: LayoutDimension = LayoutDimension.WrapContent
+    override val layoutHeight: LayoutDimension = LayoutDimension.WrapContent,
+    override val onClick: (() -> Unit)? = null
 ) : LayoutNode(), BackgroundMeasureNode {
 
     override fun measure(

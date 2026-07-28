@@ -1,7 +1,6 @@
 package com.simple.ui.precompute
 
 import android.graphics.Canvas
-import android.view.View
 import com.simple.ui.precompute.node.Constraints
 import com.simple.ui.precompute.node.LayoutDimension
 import com.simple.ui.precompute.node.LayoutNode
@@ -47,6 +46,8 @@ abstract class DrawSpec {
 
     /** Gọi từ parent (View hoặc GroupSpec). Toạ độ canvas hiện tại = parent. */
     fun draw(canvas: Canvas) {
+        if (canvas.quickReject(left.toFloat(), top.toFloat(), right.toFloat(), bottom.toFloat())) return
+
         val saved = canvas.save()
         canvas.translate(left.toFloat(), top.toFloat())
         canvas.clipRect(0, 0, width, height)
@@ -79,49 +80,68 @@ abstract class DrawSpec {
      *
      * Cùng một [DrawSpec] có thể nằm trong **cả cây spec cũ lẫn cây spec mới**
      * (do cache-by-id trong [MeasureContext] tái sử dụng). Nếu container cứ
-     * gọi thẳng [onAttachedToWindow] / [onDetachedFromWindow] khi đệ quy vào
+     * gọi thẳng [onAttachedToRuntime] / [onDetachedFromRuntime] khi đệ quy vào
      * children, shared ref sẽ chịu chu kỳ detach→attach vô ích — animator
      * (OutlineSpec) restart, scope (ImageSpec) huỷ+tái tạo, callback re-set.
      *
      * Counter đảm bảo:
-     * - [attach]: chỉ gọi [onAttachedToWindow] khi counter đi từ 0→1
+     * - [attach]: chỉ gọi [onAttachedToRuntime] khi counter đi từ 0→1
      *   (lần đầu spec này gắn vào view).
-     * - [detach]: chỉ gọi [onDetachedFromWindow] khi counter đi từ 1→0
+     * - [detach]: chỉ gọi [onDetachedFromRuntime] khi counter đi từ 1→0
      *   (spec không còn nằm trong tree nào của view).
      *
      * Container spec (GroupSpec, SizedSpec) đệ quy children qua **[attach] /
-     * [detach]** (không phải [onAttachedToWindow] / [onDetachedFromWindow]).
+     * [detach]** (không phải [onAttachedToRuntime] / [onDetachedFromRuntime]).
      * Delegate cũng gọi [attach] / [detach] chứ không gọi thẳng hook.
      */
-    fun attach(view: View) {
+    fun attach(runtime: PrecomputedRuntime, parentLeft: Int = 0, parentTop: Int = 0) {
         val wasZero = attachCount == 0
+        runtimeRef = runtime
+        runtimeLeft = parentLeft + left
+        runtimeTop = parentTop + top
         attachCount++
-        if (wasZero) onAttachedToWindow(view)
+        if (wasZero) onAttachedToRuntime(runtime)
     }
 
-    fun detach(view: View) {
+    fun detach(runtime: PrecomputedRuntime) {
         if (attachCount == 0) return
         attachCount--
-        if (attachCount == 0) onDetachedFromWindow(view)
+        if (attachCount == 0) {
+
+            onDetachedFromRuntime(runtime)
+            runtimeRef = null
+        }
     }
 
     private var attachCount: Int = 0
+    private var runtimeRef: PrecomputedRuntime? = null
+    protected var runtimeLeft: Int = 0
+        private set
+    protected var runtimeTop: Int = 0
+        private set
+    protected val runtime: PrecomputedRuntime?
+        get() = runtimeRef
+
+    protected fun requestDraw() {
+
+        runtimeRef?.requestDraw(runtimeLeft, runtimeTop, runtimeLeft + width, runtimeTop + height)
+    }
 
     /**
      * Hook cho subclass setup (start animator, kick off async load...).
      *
      * KHÔNG gọi trực tiếp từ container hay delegate — dùng [attach] để đi
      * qua reference counter. Container recurse vào children cũng phải qua
-     * `child.attach(view)`.
+     * `child.attach(runtime)`.
      */
-    open fun onAttachedToWindow(view: View) {}
+    open fun onAttachedToRuntime(runtime: PrecomputedRuntime) {}
 
     /**
      * Hook cho subclass teardown (stop animator, cancel scope, clear callback...).
      *
      * KHÔNG gọi trực tiếp — dùng [detach] để đi qua reference counter.
      */
-    open fun onDetachedFromWindow(view: View) {}
+    open fun onDetachedFromRuntime(runtime: PrecomputedRuntime) {}
 
     /**
      * Spec này (đã đo trước) có còn dùng được dưới constraint mới [c] không.
@@ -212,12 +232,12 @@ internal open class SizedSpec(
         return if (width == w && height == h) this else SizedSpec(left, top, w, h, child)
     }
 
-    override fun onAttachedToWindow(view: View) {
-        child.attach(view)
+    override fun onAttachedToRuntime(runtime: PrecomputedRuntime) {
+        child.attach(runtime, runtimeLeft, runtimeTop)
     }
 
-    override fun onDetachedFromWindow(view: View) {
-        child.detach(view)
+    override fun onDetachedFromRuntime(runtime: PrecomputedRuntime) {
+        child.detach(runtime)
     }
 
     override fun hitTest(x: Int, y: Int): DrawSpec? {
