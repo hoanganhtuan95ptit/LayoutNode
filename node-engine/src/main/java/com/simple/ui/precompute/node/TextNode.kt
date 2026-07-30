@@ -38,6 +38,7 @@ interface TextMeasureNode {
     val lineSpacingMul: Float
     val lineSpacingAdd: Float
     val textPaintDensity: Float
+    val alignment: CrossAlign
 }
 
 /**
@@ -57,6 +58,7 @@ data class TextNode(
     override val padding: EdgeInsets = EdgeInsets.ZERO,
     override val layoutWidth: LayoutDimension = LayoutDimension.WrapContent,
     override val layoutHeight: LayoutDimension = LayoutDimension.WrapContent,
+    override val alignment: CrossAlign = CrossAlign.START,
     override val textPaintDensity: Float = Resources.getSystem().displayMetrics.density,
     override val onClick: (() -> Unit)? = null
 ) : LayoutNode(), TextMeasureNode {
@@ -94,9 +96,15 @@ open class TextMeasurePolicy<N> : MeasurePolicy<N>()
             node.typeface?.let { typeface = it }
         }
 
+        val alignment = when (node.alignment) {
+            CrossAlign.START -> Layout.Alignment.ALIGN_NORMAL
+            CrossAlign.CENTER -> Layout.Alignment.ALIGN_CENTER
+            CrossAlign.END -> Layout.Alignment.ALIGN_OPPOSITE
+        }
+
         val layout = StaticLayout.Builder
             .obtain(textChar, 0, textChar.length, paint, innerWidth)
-            .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+            .setAlignment(alignment)
             .setLineSpacing(node.lineSpacingAdd, node.lineSpacingMul)
             .setMaxLines(node.maxLines)
             .setEllipsize(TextUtils.TruncateAt.END)

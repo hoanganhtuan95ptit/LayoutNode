@@ -7,6 +7,7 @@ import android.graphics.Picture
 import android.graphics.Typeface
 import android.text.StaticLayout
 import com.simple.ui.precompute.node.Constraints
+import com.simple.ui.precompute.node.CrossAlign
 import com.simple.ui.precompute.node.EdgeInsets
 import com.simple.ui.precompute.node.FlexAlignContent
 import com.simple.ui.precompute.node.FlexAlignItems
@@ -181,6 +182,7 @@ data class RuntimeColorTextNode(
     override val padding: EdgeInsets = EdgeInsets.ZERO,
     override val layoutWidth: LayoutDimension = LayoutDimension.WrapContent,
     override val layoutHeight: LayoutDimension = LayoutDimension.WrapContent,
+    override val alignment: CrossAlign = CrossAlign.START,
     override val textPaintDensity: Float = Resources.getSystem().displayMetrics.density
 ) : LayoutNode(), TextMeasureNode {
 
