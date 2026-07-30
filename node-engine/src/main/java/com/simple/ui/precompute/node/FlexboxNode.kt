@@ -115,7 +115,8 @@ data class FlexboxNode(
     override val crossGap: Int = gap,
     override val padding: EdgeInsets = EdgeInsets.ZERO,
     override val layoutWidth: LayoutDimension = LayoutDimension.WrapContent,
-    override val layoutHeight: LayoutDimension = LayoutDimension.WrapContent
+    override val layoutHeight: LayoutDimension = LayoutDimension.WrapContent,
+    override val onClick: (() -> Unit)? = null
 ) : LayoutNode(), FlexboxMeasureNode {
 
     init {
