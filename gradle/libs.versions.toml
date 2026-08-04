@@ -12,8 +12,8 @@ constraintlayout = "2.2.1"
 glide = "4.16.0"
 glideTransformations = "4.3.0"
 autoService = "1.1.1"
-kotlin = "2.1.0"
-ksp = "2.1.0-1.0.29"
+kotlin = "2.4.0"
+ksp = "2.3.9"
 adapter = "1.2.1.18"
 
 [libraries]
