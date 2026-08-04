@@ -50,7 +50,7 @@ configurations.configureEach {
 dependencies {
     implementation(project(":node-engine"))
     implementation(project(":glide-loader"))
-    implementation("com.github.hoanganhtuan95ptit:adapter:1.0.6")
+    implementation(libs.adapter)
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.core.ktx)
     implementation(libs.material)
