@@ -1,6 +1,7 @@
 package com.simple.ui.precompute
 
 import android.graphics.Canvas
+import android.os.Build
 import com.simple.ui.precompute.node.Constraints
 import com.simple.ui.precompute.node.LayoutDimension
 import com.simple.ui.precompute.node.LayoutNode
@@ -46,10 +47,23 @@ abstract class DrawSpec {
 
     /** Gọi từ parent (View hoặc GroupSpec). Toạ độ canvas hiện tại = parent. */
     fun draw(canvas: Canvas) {
-        if (canvas.quickReject(left.toFloat(), top.toFloat(), right.toFloat(), bottom.toFloat())) return
+        val l = left.toFloat()
+        val t = top.toFloat()
+        val r = right.toFloat()
+        val b = bottom.toFloat()
+        // Canvas.quickReject(FFFF) không-EdgeType chỉ có từ API 30 (Android 11).
+        // Trên API 24–29 phải dùng overload cũ có EdgeType, nếu không sẽ
+        // NoSuchMethodError ở runtime khi app compile với SDK ≥ 30.
+        val rejected = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            canvas.quickReject(l, t, r, b)
+        } else {
+            @Suppress("DEPRECATION")
+            canvas.quickReject(l, t, r, b, Canvas.EdgeType.AA)
+        }
+        if (rejected) return
 
         val saved = canvas.save()
-        canvas.translate(left.toFloat(), top.toFloat())
+        canvas.translate(l, t)
         canvas.clipRect(0, 0, width, height)
         onDrawContent(canvas)
         canvas.restoreToCount(saved)
