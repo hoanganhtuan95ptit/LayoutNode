@@ -90,13 +90,29 @@ class PrecomputedRuntime(val view: View) {
 
     fun requestRemeasure() {
 
-        if (!attached || layoutPosted) return
+        if (!attached) return
 
-        layoutPosted = true
-        view.post {
+        if (view.isInLayout) {
 
-            layoutPosted = false
-            if (attached) view.requestLayout()
+            // Đang trong lượt layout (vd: set spec trong onBindViewHolder của
+            // RecyclerView) → requestLayout thẳng sẽ rơi vào nhánh
+            // requestLayoutDuringLayout và bị nuốt, nên hoãn đúng 1 nhịp.
+            if (layoutPosted) return
+
+            layoutPosted = true
+            view.post {
+
+                layoutPosted = false
+                if (attached) view.requestLayout()
+            }
+        } else {
+
+            // Ngoài lượt layout (vd: bindData qua observeData) → gọi thẳng.
+            // requestLayout đặt sync-barrier + post traversal async qua
+            // Choreographer, chạy ở VSYNC kế và vượt qua backlog message thường
+            // trên main thread → size cập nhật gần như tức thì, không còn cửa
+            // sổ trễ như khi bọc trong view.post {}.
+            view.requestLayout()
         }
     }
 
