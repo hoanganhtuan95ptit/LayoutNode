@@ -6,6 +6,14 @@ import com.bumptech.glide.Glide
 
 
 fun ImageView.setImage(image: BigImage) {
+    
+    val source = image.source
+    if (source is Drawable) {
+
+        Glide.with(context).clear(this)
+        setImageDrawable(source)
+        return
+    }
 
     Glide.with(context)
         .load(image.source)
