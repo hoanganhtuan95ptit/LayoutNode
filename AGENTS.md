@@ -1,6 +1,6 @@
-# RetirementLauncher — Project Guidelines
+# Project Guidelines
 
-Đây là project Android launcher dành cho người cao tuổi. Trước khi code, đọc kỹ các skill dưới đây.
+Đây là project Android. Trước khi code, đọc kỹ các skill dưới đây.
 
 ---
 
