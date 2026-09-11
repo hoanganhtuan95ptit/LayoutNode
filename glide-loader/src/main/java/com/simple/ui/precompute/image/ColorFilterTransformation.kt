@@ -2,9 +2,9 @@ package com.simple.ui.precompute.image
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
-import android.graphics.Paint
+import android.graphics.Color
 import android.graphics.PorterDuff
-import android.graphics.PorterDuffColorFilter
+import android.os.Build
 import com.bumptech.glide.load.engine.bitmap_recycle.BitmapPool
 import com.bumptech.glide.load.resource.bitmap.BitmapTransformation
 import java.nio.ByteBuffer
@@ -12,8 +12,15 @@ import java.security.MessageDigest
 
 class ColorFilterTransformation(
     private val color: Int,
-    private val mode: PorterDuff.Mode = PorterDuff.Mode.SRC_IN
+    private val mode: PorterDuff.Mode? = null
 ) : BitmapTransformation() {
+
+    val effectiveMode: PorterDuff.Mode
+        get() = mode ?: if (Color.alpha(color) < 255) {
+            PorterDuff.Mode.SRC_IN
+        } else {
+            PorterDuff.Mode.SRC_ATOP
+        }
 
     override fun transform(
         pool: BitmapPool,
@@ -25,18 +32,20 @@ class ColorFilterTransformation(
         val width = toTransform.width
         val height = toTransform.height
 
-        val bitmap = pool.get(width, height, Bitmap.Config.ARGB_8888)
-        bitmap.setHasAlpha(true)
+        val config = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && toTransform.config == Bitmap.Config.HARDWARE) {
+
+            Bitmap.Config.ARGB_8888
+        } else {
+
+            toTransform.config ?: Bitmap.Config.ARGB_8888
+        }
+        val bitmap = pool.get(width, height, config)
+        bitmap.eraseColor(Color.TRANSPARENT)
         bitmap.density = toTransform.density
 
         val canvas = Canvas(bitmap)
-        canvas.density = toTransform.density
-
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-
-            colorFilter = PorterDuffColorFilter(color, mode)
-        }
-        canvas.drawBitmap(toTransform, 0f, 0f, paint)
+        canvas.drawBitmap(toTransform, 0f, 0f, null)
+        canvas.drawColor(color, effectiveMode)
 
         return bitmap
     }
@@ -45,26 +54,26 @@ class ColorFilterTransformation(
 
         if (this === other) return true
         if (other !is ColorFilterTransformation) return false
-        return color == other.color && mode == other.mode
+        return color == other.color && effectiveMode == other.effectiveMode
     }
 
     override fun hashCode(): Int {
 
         var result = ID.hashCode()
         result = 31 * result + color
-        result = 31 * result + mode.hashCode()
+        result = 31 * result + effectiveMode.hashCode()
         return result
     }
 
     override fun updateDiskCacheKey(messageDigest: MessageDigest) {
 
         messageDigest.update(ID_BYTES)
-        messageDigest.update(ByteBuffer.allocate(8).putInt(color).putInt(mode.ordinal).array())
+        messageDigest.update(ByteBuffer.allocate(8).putInt(color).putInt(effectiveMode.ordinal).array())
     }
 
     companion object {
 
-        private const val ID = "com.simple.ui.precompute.image.ColorFilterTransformation.1"
+        private const val ID = "com.simple.ui.precompute.image.ColorFilterTransformation.2"
         private val ID_BYTES = ID.toByteArray(Charsets.UTF_8)
     }
 }

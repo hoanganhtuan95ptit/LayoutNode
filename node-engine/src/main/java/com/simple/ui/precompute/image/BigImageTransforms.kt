@@ -62,10 +62,10 @@ data class Blur(
     val sampling: Int = 1
 ) : BigImageTransform
 
-/** Áp màu lên ảnh bằng PorterDuff. Mặc định dùng [PorterDuff.Mode.SRC_IN] để hỗ trợ alpha của màu. */
+/** Áp màu lên ảnh bằng PorterDuff. Mặc định tự động chọn: [PorterDuff.Mode.SRC_ATOP] khi màu không có alpha (alpha = 255), và [PorterDuff.Mode.SRC_IN] khi màu có alpha (alpha < 255). */
 data class ColorFilter(
     val color: Int,
-    val mode: PorterDuff.Mode = PorterDuff.Mode.SRC_IN
+    val mode: PorterDuff.Mode? = null
 ) : BigImageTransform
 
 /** Chuyển ảnh sang grayscale. */
