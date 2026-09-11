@@ -1,5 +1,6 @@
 package com.simple.ui.precompute.image
 
+import android.graphics.PorterDuff
 import com.simple.ui.precompute.image.BigImageTransform
 
 /** Crop ảnh về hình tròn. */
@@ -61,9 +62,10 @@ data class Blur(
     val sampling: Int = 1
 ) : BigImageTransform
 
-/** Áp màu lên ảnh bằng PorterDuff SRC_ATOP. */
+/** Áp màu lên ảnh bằng PorterDuff. Mặc định dùng [PorterDuff.Mode.SRC_IN] để hỗ trợ alpha của màu. */
 data class ColorFilter(
-    val color: Int
+    val color: Int,
+    val mode: PorterDuff.Mode = PorterDuff.Mode.SRC_IN
 ) : BigImageTransform
 
 /** Chuyển ảnh sang grayscale. */

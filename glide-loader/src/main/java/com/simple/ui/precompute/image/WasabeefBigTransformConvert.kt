@@ -7,7 +7,6 @@ import com.bumptech.glide.load.Transformation
 import com.bumptech.glide.load.resource.bitmap.CenterCrop as GlideCenterCrop
 import com.google.auto.service.AutoService
 import jp.wasabeef.glide.transformations.BlurTransformation
-import jp.wasabeef.glide.transformations.ColorFilterTransformation
 import jp.wasabeef.glide.transformations.CropCircleTransformation
 import jp.wasabeef.glide.transformations.CropCircleWithBorderTransformation
 import jp.wasabeef.glide.transformations.CropSquareTransformation
@@ -41,7 +40,7 @@ class WasabeefBigTransformConvert : BigImageTransformConvert {
             transform.radius.coerceIn(1, 25),
             transform.sampling.coerceAtLeast(1)
         )
-        is ColorFilter -> ColorFilterTransformation(transform.color)
+        is ColorFilter -> ColorFilterTransformation(transform.color, transform.mode)
         is Grayscale -> GrayscaleTransformation()
         is Mask -> transform.maskResId
             .takeIf { it != 0 }
