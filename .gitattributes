@@ -1,0 +1,16 @@
+# Ensure the Gradle wrapper jar is never mangled by EOL/encoding conversion
+# (fixes JitPack "could not open gradle-wrapper.jar" / ClassNotFoundException).
+*.jar binary
+gradle/wrapper/gradle-wrapper.jar binary
+
+# Keep shell/batch wrapper scripts with stable line endings
+gradlew text eol=lf
+*.bat text eol=crlf
+
+# Common binary assets
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.keystore binary
+*.jks binary
