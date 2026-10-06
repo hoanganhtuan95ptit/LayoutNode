@@ -60,7 +60,10 @@ data class TextNode(
     override val layoutHeight: LayoutDimension = LayoutDimension.WrapContent,
     override val alignment: CrossAlign = CrossAlign.START,
     override val textPaintDensity: Float = Resources.getSystem().displayMetrics.density,
-    override val onClick: (() -> Unit)? = null
+    override val onClick: (() -> Unit)? = null,
+    override val onLongClick: (() -> Unit)? = null,
+    override val onTouch: ((NodeTouch) -> Boolean)? = null,
+    override val contentDescription: String? = null
 ) : LayoutNode(), TextMeasureNode {
 
     override fun measure(

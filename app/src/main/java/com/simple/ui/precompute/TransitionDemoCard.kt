@@ -6,7 +6,9 @@ import android.graphics.Typeface
 import com.simple.ui.precompute.node.Constraints
 import com.simple.ui.precompute.node.ConstraintChild
 import com.simple.ui.precompute.node.ConstraintNode
+import com.simple.ui.precompute.node.BoundsMode
 import com.simple.ui.precompute.node.EdgeInsets
+import com.simple.ui.precompute.node.GroupSpec
 import com.simple.ui.precompute.node.KeyedNode
 import com.simple.ui.precompute.node.LayoutDimension
 import com.simple.ui.precompute.node.LayoutNode
@@ -59,7 +61,8 @@ fun buildTransitionDemoCard(cardWidth: Int, density: Float): DrawSpec {
         listOf("kotlin" to false, "android" to false, "canvas" to false, "node" to false, "spec" to false, "glide" to false)
     )
     val effects = listOf(
-        "Fade" to TransitionConfig(changeBounds = true, enterExit = TransitionType.FADE),
+        "Morph (scale + cross-fade)" to TransitionConfig(changeBounds = true, enterExit = TransitionType.FADE, boundsMode = BoundsMode.MORPH),
+        "Fade (ChangeBounds clip)" to TransitionConfig(changeBounds = true, enterExit = TransitionType.FADE),
         "Scale" to TransitionConfig(changeBounds = true, enterExit = TransitionType.SCALE),
         "Fade + Scale" to TransitionConfig(changeBounds = true, enterExit = TransitionType.FADE_SCALE),
         "Chỉ di chuyển" to TransitionConfig(changeBounds = true, enterExit = TransitionType.NONE),
@@ -75,10 +78,15 @@ fun buildTransitionDemoCard(cardWidth: Int, density: Float): DrawSpec {
     val headerHeight = (headerSpecs.maxOfOrNull { it.top + it.height } ?: 0) + dp(12)
 
     val flow = ChipFlow(cardWidth, padLeft, padRight, gap, headerHeight)
-    val sceneSpecs = scenes.map { refs ->
+    val rawScenes = scenes.map { refs ->
         flow.layout(refs.map { (key, big) -> measureChip(key, big, cardWidth, ::dp, ::sp) })
     }
-    val sceneHeights = sceneSpecs.map { flow.bottomOf(it) + dp(16) }
+    val sceneHeights = rawScenes.map { flow.bottomOf(it) + dp(16) }
+    // DEEP-CAPTURE demo: bọc chip trong một box KHÔNG có id (nested 1 cấp).
+    // Chip vẫn animate vì engine thu thập target ĐỆ QUY theo toạ độ tuyệt đối.
+    val sceneSpecs = rawScenes.mapIndexed { i, chips ->
+        listOf(GroupSpec(0, 0, cardWidth, sceneHeights[i], chips, BoxNode) as DrawSpec)
+    }
 
     return TransitionDemoSpec(
         left = 0,
@@ -246,6 +254,15 @@ private class ChipFlow(
 
     fun bottomOf(specs: List<DrawSpec>): Int =
         specs.maxOfOrNull { it.top + it.height } ?: topOffset
+}
+
+/** Box KHÔNG id — dùng để bọc chip (nested) kiểm chứng deep capture. */
+private val BoxNode = object : LayoutNode() {
+
+    override val padding: EdgeInsets = EdgeInsets.ZERO
+
+    override fun measure(ctx: MeasureContext, c: Constraints, x: Int, y: Int): DrawSpec =
+        throw UnsupportedOperationException("box dựng thủ công")
 }
 
 /** Node rỗng, chỉ để spec có `node` hợp lệ; click xử lý ở hitTest của spec. */

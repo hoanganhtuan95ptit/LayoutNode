@@ -31,10 +31,25 @@ enum class TransitionType {
     FADE_SCALE
 }
 
+/**
+ * Cách xử lý node đổi vị trí/size (track Change):
+ * - [CLIP]: nội suy khung, nội dung ở layout đích, CLIP theo bounds — giống
+ *   `ChangeBounds` của Android (co/giãn có thể thấy "cắt" nội dung).
+ * - [MORPH]: trượt + **SCALE** nội dung theo khung + **cross-fade** nội dung cũ
+ *   sang mới (kiểu Material container transform) — mượt, không cắt, và chuyển
+ *   được cả khi nội dung đổi.
+ */
+enum class BoundsMode {
+
+    CLIP,
+    MORPH
+}
+
 data class TransitionConfig(
     val changeBounds: Boolean = true,
     val enterExit: TransitionType = TransitionType.FADE,
-    val durationMs: Long = 260L
+    val durationMs: Long = 260L,
+    val boundsMode: BoundsMode = BoundsMode.CLIP
 )
 
 data class TransitionNode(
@@ -52,6 +67,9 @@ data class TransitionNode(
     override val padding: EdgeInsets = EdgeInsets.ZERO,
     override val id: Any? = null,
     override val onClick: (() -> Unit)? = null,
+    override val onLongClick: (() -> Unit)? = null,
+    override val onTouch: ((NodeTouch) -> Boolean)? = null,
+    override val contentDescription: String? = null,
     override val layoutWidth: LayoutDimension = LayoutDimension.WrapContent,
     override val layoutHeight: LayoutDimension = LayoutDimension.WrapContent
 ) : LayoutNode(), LinearMeasureNode {
@@ -129,6 +147,10 @@ open class TransitionSpec(
     private var exitingChildren: List<DrawSpec> = emptyList()
 
     private var tracks: List<Track> = emptyList()
+    /** Cây END đã bỏ các node tracked — vẽ "nền" tĩnh (structure không id). */
+    private var backgroundChildren: List<DrawSpec> = emptyList()
+    /** Có ít nhất 1 Change cần cross-fade (MORPH + nội dung đổi) → gom 1 lớp. */
+    private var hasCrossFade = false
     private var animating = false
     private var progress = 1f
 
@@ -166,6 +188,11 @@ open class TransitionSpec(
 
         val rt = runtime
 
+        // Interrupt liền mạch: nếu đang animate, lấy rect ĐANG hiển thị (đã nội
+        // suy ở progress hiện tại) làm start cho lượt mới → child không nhảy về
+        // scene đích cũ rồi mới chạy.
+        val startRectOverride = if (animating) currentRectsById() else emptyMap()
+
         // Bị chen giữa chừng: drop các exit spec còn dang dở của lượt trước
         // (đã attach) để không rò; lượt mới sẽ tính exit từ scene hiện tại.
         if (rt != null) exitingChildren.forEach { it.detach(rt) }
@@ -176,7 +203,7 @@ open class TransitionSpec(
         val stillExiting = start.filter { (it.node?.id) !in endIds }
         val replacedStart = start.filter { (it.node?.id) in endIds }
 
-        tracks = buildTracks(start, end)
+        prepareTransition(start, end, startRectOverride)
 
         if (rt != null) {
 
@@ -196,30 +223,86 @@ open class TransitionSpec(
         requestDraw()
     }
 
-    private fun buildTracks(start: List<DrawSpec>, end: List<DrawSpec>): List<Track> {
+    /**
+     * Deep capture: thu thập node có `id` ở MỌI độ sâu (dừng tại node tracked —
+     * subtree đi theo nó) với toạ độ TUYỆT ĐỐI, diff start↔end → [tracks], và
+     * dựng [backgroundChildren] = cây end bỏ các node tracked (phần "nền" tĩnh).
+     */
+    private fun prepareTransition(
+        start: List<DrawSpec>,
+        end: List<DrawSpec>,
+        startRectOverride: Map<Any?, IntRect>
+    ) {
 
-        val startById = HashMap<Any?, DrawSpec>(start.size)
-        start.forEach { startById[it.node?.id] = it }
+        val startT = LinkedHashMap<Any, Pair<DrawSpec, IntRect>>()
+        start.forEach { collectTarget(it, 0, 0, startT) }
+        val endT = LinkedHashMap<Any, Pair<DrawSpec, IntRect>>()
+        end.forEach { collectTarget(it, 0, 0, endT) }
 
-        val out = ArrayList<Track>(end.size + start.size)
-        end.forEach { e ->
+        val out = ArrayList<Track>(startT.size + endT.size)
+        endT.forEach { (id, pair) ->
 
-            val s = startById[e.node?.id]
-            if (s == null || e.node?.id == null) {
+            val s = startT[id]
+            if (s == null) {
 
-                out.add(Track.Enter(e))
+                out.add(Track.Enter(pair.first, pair.second))
             } else {
 
-                out.add(Track.Change(e, IntRect.of(s), IntRect.of(e)))
+                // Ưu tiên rect đang-hiển-thị (interrupt), fallback rect scene cũ.
+                out.add(Track.Change(pair.first, startRectOverride[id] ?: s.second, pair.second, s.first))
             }
         }
+        startT.forEach { (id, pair) ->
 
-        val endIds = end.mapNotNull { it.node?.id }.toHashSet()
-        start.forEach { s ->
-
-            if (s.node?.id == null || s.node?.id !in endIds) out.add(Track.Exit(s))
+            if (id !in endT) out.add(Track.Exit(pair.first, pair.second))
         }
-        return out
+
+        tracks = out
+        backgroundChildren = end.mapNotNull { stripTracked(it, endT.keys) }
+        hasCrossFade = config.boundsMode == BoundsMode.MORPH &&
+                config.changeBounds &&
+                out.any { it is Track.Change && it.fromSpec.node != it.spec.node }
+    }
+
+    private fun isCrossFade(t: Track.Change): Boolean =
+        config.boundsMode == BoundsMode.MORPH && config.changeBounds && t.fromSpec.node != t.spec.node
+
+    /** Gom node tracked (dừng tại node có id) kèm abs rect vào [out]. */
+    private fun collectTarget(
+        s: DrawSpec,
+        baseLeft: Int,
+        baseTop: Int,
+        out: LinkedHashMap<Any, Pair<DrawSpec, IntRect>>
+    ) {
+
+        val absL = baseLeft + s.left
+        val absT = baseTop + s.top
+        val id = s.node?.id
+        if (id != null) {
+
+            out[id] = s to IntRect(absL, absT, s.width, s.height)
+        } else {
+
+            s.forEachChildSpec { child -> collectTarget(child, absL, absT, out) }
+        }
+    }
+
+    /** Trả về [spec] đã bỏ mọi node tracked (null nếu chính nó tracked). */
+    private fun stripTracked(spec: DrawSpec, trackedIds: Set<Any>): DrawSpec? {
+
+        val id = spec.node?.id
+        if (id != null && id in trackedIds) return null
+        if (spec !is GroupSpec) return spec
+
+        val kept = ArrayList<DrawSpec>(spec.children.size)
+        var changed = false
+        spec.children.forEach { c ->
+
+            val r = stripTracked(c, trackedIds)
+            if (r == null) changed = true else { kept.add(r); if (r !== c) changed = true }
+        }
+        if (!changed) return spec
+        return GroupSpec(spec.left, spec.top, spec.width, spec.height, kept, spec.node)
     }
 
     override fun onDrawContent(canvas: Canvas) {
@@ -232,7 +315,45 @@ open class TransitionSpec(
         }
 
         val p = ease(progress)
-        for (i in tracks.indices) drawTrack(canvas, tracks[i], p)
+
+        // 1. Nền tĩnh (structure không id).
+        for (i in backgroundChildren.indices) backgroundChildren[i].draw(canvas)
+
+        // 2. Nội dung ĐÍCH (solid) của mọi Change — vẽ đặc, không lớp.
+        val list = tracks
+        for (i in list.indices) {
+
+            val t = list[i]
+            if (t is Track.Change) drawChangeTarget(canvas, t, p)
+        }
+
+        // 3. Gom TẤT CẢ nội dung CŨ của các Change cross-fade vào MỘT lớp
+        //    (alpha = 1-p), đè lên nội dung mới → cross-fade sạch, 1 saveLayer
+        //    cho mọi N (mọi node cùng progress nên chung 1 alpha).
+        if (hasCrossFade) {
+
+            val a = ((1f - p) * 255f).toInt().coerceIn(0, 255)
+            val saved = canvas.saveLayerAlpha(0f, 0f, width.toFloat(), height.toFloat(), a)
+            for (i in list.indices) {
+
+                val t = list[i]
+                if (t is Track.Change && isCrossFade(t)) {
+
+                    drawScaledFade(canvas, t.fromSpec, t.from, lerpRect(t.from, t.to, p), 1f)
+                }
+            }
+            canvas.restoreToCount(saved)
+        }
+
+        // 4. Enter / Exit (thường ít node) — giữ per-node.
+        for (i in list.indices) {
+
+            when (val t = list[i]) {
+                is Track.Enter -> drawAppearing(canvas, t.spec, t.at, p)
+                is Track.Exit -> drawAppearing(canvas, t.spec, t.at, 1f - p)
+                is Track.Change -> {}
+            }
+        }
     }
 
     override fun forEachChildSpec(action: (DrawSpec) -> Unit) {
@@ -241,45 +362,60 @@ open class TransitionSpec(
         for (i in list.indices) action(list[i])
     }
 
-    private fun drawTrack(canvas: Canvas, track: Track, p: Float) {
+    /** Vẽ nội dung ĐÍCH (mới) của một Change, SOLID (nội dung cũ gom ở lớp riêng). */
+    private fun drawChangeTarget(canvas: Canvas, track: Track.Change, p: Float) {
 
-        when (track) {
-            is Track.Change -> drawChange(canvas, track, p)
-            is Track.Enter -> drawAppearing(canvas, track.spec, p)
-            is Track.Exit -> drawAppearing(canvas, track.spec, 1f - p)
-        }
-    }
-
-    private fun drawChange(canvas: Canvas, track: Track.Change, p: Float) {
-
+        val spec = track.spec
         if (!config.changeBounds) {
 
-            track.spec.draw(canvas)
+            spec.withPosition(track.to.left, track.to.top).draw(canvas)
             return
         }
 
-        val x = lerp(track.from.left, track.to.left, p)
-        val y = lerp(track.from.top, track.to.top, p)
-        val w = lerp(track.from.width, track.to.width, p)
-        val h = lerp(track.from.height, track.to.height, p)
+        val rect = lerpRect(track.from, track.to, p)
+        if (config.boundsMode == BoundsMode.MORPH) {
 
-        // Nội suy cả size theo kiểu ChangeBounds: nội dung giữ ở layout đích,
-        // chỉ clip theo bounds đang nội suy (KHÔNG scale → chữ không méo).
-        val drawn =
-            if (w == track.spec.width && h == track.spec.height) track.spec
-            else track.spec.withSize(w, h)
+            // MORPH: scale nội dung mới khít rect (mượt, không clip-cut).
+            drawScaledFade(canvas, spec, track.to, rect, 1f)
+        } else {
+
+            // CLIP = ChangeBounds: nội dung ở layout đích, clip theo bounds nội suy.
+            var drawn = spec.withPosition(rect.left, rect.top)
+            if (rect.width != spec.width || rect.height != spec.height) drawn = drawn.withSize(rect.width, rect.height)
+            drawn.draw(canvas)
+        }
+    }
+
+    /** Vẽ [spec] (kích thước gốc = [src]) scale khít [dst] + alpha. */
+    private fun drawScaledFade(canvas: Canvas, spec: DrawSpec, src: IntRect, dst: IntRect, alpha: Float) {
+
+        val a = alpha.coerceIn(0f, 1f)
+        if (a <= 0f) return
+
+        val sx = dst.width.toFloat() / src.width.coerceAtLeast(1)
+        val sy = dst.height.toFloat() / src.height.coerceAtLeast(1)
+        val positioned = spec.withPosition(dst.left, dst.top)
 
         val saved = canvas.save()
-        canvas.translate((x - drawn.left).toFloat(), (y - drawn.top).toFloat())
-        drawn.draw(canvas)
+        if (a < 1f) {
+
+            canvas.saveLayerAlpha(
+                dst.left.toFloat(), dst.top.toFloat(),
+                (dst.left + dst.width).toFloat(), (dst.top + dst.height).toFloat(),
+                (a * 255).toInt()
+            )
+        }
+        canvas.scale(sx, sy, dst.left.toFloat(), dst.top.toFloat())
+        positioned.draw(canvas)
         canvas.restoreToCount(saved)
     }
 
-    private fun drawAppearing(canvas: Canvas, spec: DrawSpec, visibility: Float) {
+    private fun drawAppearing(canvas: Canvas, spec0: DrawSpec, at: IntRect, visibility: Float) {
 
         val v = visibility.coerceIn(0f, 1f)
         if (v <= 0f) return
 
+        val spec = spec0.withPosition(at.left, at.top)
         val style = config.enterExit
         if (style == TransitionType.NONE) {
 
@@ -337,7 +473,7 @@ open class TransitionSpec(
         animMaxWidth = maxOf(prev.width, idleWidth)
         animMaxHeight = maxOf(prev.height, idleHeight)
 
-        tracks = buildTracks(start, currentChildren)
+        prepareTransition(start, currentChildren, emptyMap())
 
         // Attach instance của scene mới (end). Các child persist bên start thuộc
         // spec cũ — chỉ mượn rect (track.from), không attach ở đây; spec cũ tự
@@ -410,6 +546,8 @@ open class TransitionSpec(
 
         animating = false
         tracks = emptyList()
+        backgroundChildren = emptyList()
+        hasCrossFade = false
         val rt = runtime
         if (rt != null) exitingChildren.forEach { it.detach(rt) }
         exitingChildren = emptyList()
@@ -442,11 +580,32 @@ open class TransitionSpec(
     private fun lerp(from: Int, to: Int, t: Float): Int =
         (from + (to - from) * t).toInt()
 
+    private fun lerpRect(a: IntRect, b: IntRect, t: Float): IntRect =
+        IntRect(lerp(a.left, b.left, t), lerp(a.top, b.top, t), lerp(a.width, b.width, t), lerp(a.height, b.height, t))
+
+    /** Rect đang hiển thị của từng id ở progress hiện tại (dùng cho interrupt). */
+    private fun currentRectsById(): Map<Any?, IntRect> {
+
+        val p = ease(progress)
+        val map = HashMap<Any?, IntRect>(tracks.size)
+        tracks.forEach { track ->
+
+            when (track) {
+                is Track.Change -> track.spec.node?.id?.let { map[it] = lerpRect(track.from, track.to, p) }
+                is Track.Enter -> track.spec.node?.id?.let { map[it] = track.at }
+                is Track.Exit -> track.spec.node?.id?.let { map[it] = track.at }
+            }
+        }
+        return map
+    }
+
     private sealed class Track {
 
-        class Change(val spec: DrawSpec, val from: IntRect, val to: IntRect) : Track()
-        class Enter(val spec: DrawSpec) : Track()
-        class Exit(val spec: DrawSpec) : Track()
+        // Mọi rect là toạ độ TUYỆT ĐỐI trong TransitionSpec (deep capture).
+        // [spec] = nội dung ĐÍCH, [fromSpec] = nội dung NGUỒN (cho MORPH cross-fade).
+        class Change(val spec: DrawSpec, val from: IntRect, val to: IntRect, val fromSpec: DrawSpec) : Track()
+        class Enter(val spec: DrawSpec, val at: IntRect) : Track()
+        class Exit(val spec: DrawSpec, val at: IntRect) : Track()
     }
 
     protected class IntRect(val left: Int, val top: Int, val width: Int, val height: Int) {

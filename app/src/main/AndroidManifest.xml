@@ -23,6 +23,14 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name="com.simple.ui.precompute.LazyChatActivity"
+            android:exported="true" />
+
+        <activity
+            android:name="com.simple.ui.precompute.MorphStressActivity"
+            android:exported="true" />
+
     </application>
 
 </manifest>

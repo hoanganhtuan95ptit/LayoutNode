@@ -52,7 +52,11 @@ data class ProgressBarNode(
     override val cornerRadius: Float = -1f,
     override val padding: EdgeInsets = EdgeInsets.ZERO,
     override val layoutWidth: LayoutDimension = LayoutDimension.MatchParent,
-    override val layoutHeight: LayoutDimension = LayoutDimension.WrapContent
+    override val layoutHeight: LayoutDimension = LayoutDimension.WrapContent,
+    override val onClick: (() -> Unit)? = null,
+    override val onLongClick: (() -> Unit)? = null,
+    override val onTouch: ((NodeTouch) -> Boolean)? = null,
+    override val contentDescription: String? = null
 ) : LayoutNode(), ProgressBarMeasureNode {
 
     override fun measure(

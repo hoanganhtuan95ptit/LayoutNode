@@ -62,7 +62,11 @@ data class GaugeScoreNode(
     override val labelTextScale: Float = 0.10f,
     override val padding: EdgeInsets = EdgeInsets.ZERO,
     override val layoutWidth: LayoutDimension = LayoutDimension.MatchParent,
-    override val layoutHeight: LayoutDimension = LayoutDimension.MatchParent
+    override val layoutHeight: LayoutDimension = LayoutDimension.MatchParent,
+    override val onClick: (() -> Unit)? = null,
+    override val onLongClick: (() -> Unit)? = null,
+    override val onTouch: ((NodeTouch) -> Boolean)? = null,
+    override val contentDescription: String? = null
 ) : LayoutNode(), GaugeScoreMeasureNode {
 
     override fun measure(

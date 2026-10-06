@@ -23,7 +23,11 @@ interface SpaceMeasureNode
 data class SpaceNode(
     override val padding: EdgeInsets = EdgeInsets.ZERO,
     override val layoutWidth: LayoutDimension = LayoutDimension.WrapContent,
-    override val layoutHeight: LayoutDimension = LayoutDimension.WrapContent
+    override val layoutHeight: LayoutDimension = LayoutDimension.WrapContent,
+    override val onClick: (() -> Unit)? = null,
+    override val onLongClick: (() -> Unit)? = null,
+    override val onTouch: ((NodeTouch) -> Boolean)? = null,
+    override val contentDescription: String? = null
 ) : LayoutNode(), SpaceMeasureNode {
 
     override fun measure(

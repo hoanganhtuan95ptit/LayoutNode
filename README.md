@@ -23,6 +23,8 @@ Thư viện **node-engine** giải quyết vấn đề measure & layout tốn k�
    - [FlexboxNode](#49-flexboxnode----container-wrap-kiểu-flexboxlayout)
    - [EdgeInsets](#410-edgeinsets----paddingmargin)
    - [LayoutDimension](#411-layoutdimension----widthheight-kiểu-xml)
+   - [TransitionNode](#412-transitionnode----animation-giữa-trạng-thái)
+   - [KeyedNode](#413-keyednode----identity--interaction)
 5. [Đo layout với LayoutEngine](#5-đo-layout-với-layoutengine)
 6. [Gắn vào View](#6-gắn-vào-view)
 7. [Luồng ViewModel → Fragment](#7-luồng-viewmodel--fragment)
@@ -48,7 +50,7 @@ Trên Android stock, `View.onMeasure()` chạy ở **UI thread**, bao gồm cả
 - Data tĩnh trong nhiều giây/phút.
 - View self-contained, không phụ thuộc sibling.
 
-→ Có thể **đo 1 lần ở background, cache kết quả, view chỉ vẽ**.
+→ Có thể **đo ở background (theo cửa sổ hiển thị), view chỉ vẽ kết quả đã tính sẵn**.
 
 ---
 
@@ -63,8 +65,8 @@ Trên Android stock, `View.onMeasure()` chạy ở **UI thread**, bao gồm cả
 ```
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐    ┌──────────────┐
 │   LayoutNode    │───▶│   LayoutEngine   │───▶│  MeasurePolicy  │───▶│   DrawSpec   │
-│  (thuần data)   │    │  (orchestrate +  │    │ (thuật toán đo) │    │ (size + draw)│
-│                 │    │      cache)      │    │                 │    │              │
+│  (thuần data)   │    │  (orchestrate,   │    │ (thuật toán đo) │    │ (size + draw)│
+│                 │    │    STATELESS)    │    │                 │    │              │
 └─────────────────┘    └──────────────────┘    └─────────────────┘    └──────────────┘
         ▲                                                                    │
         │                                                                    ▼
@@ -77,28 +79,32 @@ Trên Android stock, `View.onMeasure()` chạy ở **UI thread**, bao gồm cả
 
 | Tầng | Trách nhiệm | Thread |
 |------|-------------|--------|
-| `LayoutNode` | Mô tả layout bằng data immutable: text, ảnh, padding, width/height, click callback, children... | bất kỳ |
-| `LayoutEngine.measure()` | Entry point đo layout: chặn main thread, tạo `MeasureContext`, chạy đo root và gắn cache slot nếu caller truyền `id` | background |
-| `MeasureContext` | Quản lý đo child và reuse `DrawSpec` qua cache theo `LayoutNode.id` | background |
+| `LayoutNode` | Mô tả layout bằng data immutable: text, ảnh, padding, width/height, click/long-click/touch callback, children... | bất kỳ |
+| `LayoutEngine.measure()` | Entry point đo layout: chặn main thread, tạo `MeasureContext`, chạy đo root. **Hàm thuần, KHÔNG cache** — cùng (node, constraints) ra cùng kết quả, không giữ lại spec giữa các lần gọi (tránh rò rỉ). | background |
+| `MeasureContext` | Seam đệ quy để container đo child mà không cần biết concrete type. Không giữ state. | background |
 | `MeasurePolicy<N>` | Thuật toán đo cụ thể cho từng loại node: resolve constraint, tính size, gán vị trí child, tạo `DrawSpec` tương ứng | background |
-| `DrawSpec` | Kết quả đã đo: `left/top/width/height`, logic `draw(canvas)`, hit-test, lifecycle attach/detach | hand-off sang UI |
-| `PrecomputedView` / `PrecomputedDelegate` | Giữ spec hiện tại, `requestLayout()` khi size đổi, `invalidate()` khi chỉ cần vẽ lại, dispatch tap tới node clickable | UI |
+| `DrawSpec` | Kết quả đã đo: `left/top/width/height`, toạ độ tuyệt đối (`viewLeft/viewTop`), logic `draw(canvas)`, hit-test, lifecycle attach/detach | hand-off sang UI |
+| `PrecomputedView` / `PrecomputedDelegate` | Giữ spec hiện tại, `requestLayout()` khi size đổi, `invalidate()` (gom qua Choreographer, hỗ trợ partial dirty-rect) khi chỉ cần vẽ lại, dispatch click/long-click/touch + accessibility | UI |
 
-Nói ngắn gọn: `LayoutNode` là **data**, `MeasurePolicy` là **behavior đo**, còn `DrawSpec` là **kết quả renderable**. `LayoutEngine` không cần biết chi tiết `TextNode`, `ImageNode`, `LinearNode`...; nó chỉ điều phối quá trình đo và cache. Mỗi node tự gọi policy tương ứng, ví dụ `TextNode` gọi `TextMeasurePolicy`, `ImageNode` gọi `ImageMeasurePolicy`, `FlexboxNode` gọi `FlexboxMeasurePolicy`.
+Nói ngắn gọn: `LayoutNode` là **data**, `MeasurePolicy` là **behavior đo**, còn `DrawSpec` là **kết quả renderable**. `LayoutEngine` không cần biết chi tiết `TextNode`, `ImageNode`, `LinearNode`...; nó chỉ điều phối quá trình đo. Mỗi node tự gọi policy tương ứng, ví dụ `TextNode` gọi `TextMeasurePolicy`, `ImageNode` gọi `ImageMeasurePolicy`, `FlexboxNode` gọi `FlexboxMeasurePolicy`.
 
 Luồng update thường gặp:
 
 ```kotlin
 // background thread
-val spec = LayoutEngine.measure(node, Constraints(maxWidth), id = cacheKey)
+val spec = LayoutEngine.measure(node, Constraints(maxWidth))
 
 // main thread
-precomputedView.spec = spec
+precomputedView.spec = spec   // chỉ swap O(1): không đo, không diff cây
 ```
 
-Cache hoạt động theo `LayoutNode.id`: nếu node mới vẫn là **cùng instance** (`===`) và spec cũ còn hợp lệ dưới constraint mới, engine trả lại spec cũ để bỏ qua phần đo tốn kém như record text `Picture`, tính intrinsic ảnh, layout container... Nếu dữ liệu đổi hoặc constraint không còn phù hợp, node được đo lại như bình thường.
+### Không cache — và vì sao
 
-Vì `DrawSpec` có thể giữ tài nguyên nặng (`Picture`, `Drawable`, `Bitmap`, animator state), caller nên gọi `LayoutEngine.evict(id)` khi màn hình/view gắn với cache key bị huỷ hẳn, hoặc `LayoutEngine.clearCache()` khi đổi theme/density hay low-memory.
+`LayoutEngine` **cố ý KHÔNG có cache**. Cache theo id từng được thử nhưng gỡ bỏ vì với list khổng lồ (ví dụ chat 1 triệu item) nó sẽ giữ spec của mọi item trong RAM → tốn bộ nhớ, đánh bại ý nghĩa recycling của RecyclerView.
+
+Thay vào đó, **bộ nhớ được chặn ở tầng adapter** bằng cách đo LAZY theo cửa sổ hiển thị: chỉ item đang/sắp hiển thị mới được đo thành spec, item cuộn xa bị evict → giải phóng `Picture`/`Drawable`. Xem [Mục 8](#8-dùng-trong-recyclerview). Đã kiểm chứng: list 1 triệu item chỉ dùng ~12MB Java heap / ~28 view, không phụ thuộc kích thước list, scroll 0% jank.
+
+> `DrawSpec` giữ tài nguyên nặng (`Picture`, `Drawable`, animator state) nhưng không được engine cache lại; nó sống theo spec mà adapter đang giữ và được GC khi adapter bỏ reference (evict khỏi cửa sổ).
 
 **Quy tắc vàng:** mọi resource phải resolve sẵn trước khi đưa vào engine — `Bitmap` đã decode, `color` là `Int`, `Typeface` đã load. Engine **không được đụng `Context`**.
 
@@ -632,9 +638,10 @@ FlexboxNode(
 | `wrapBefore` | Buộc child bắt đầu line mới |
 
 Lưu ý: baseline alignment chưa hỗ trợ vì `DrawSpec` hiện không expose baseline
-chung cho mọi node. `flexGrow`, `flexShrink`, `STRETCH` đổi measured box qua
-`DrawSpec.withSize()`; nếu child là một composite node phức tạp, phần nội dung
-bên trong không tự remeasure lại theo size mới.
+chung cho mọi node. `flexGrow` / `flexShrink` **đo lại** node con tại size trục
+chính mới (text nhiều dòng wrap lại đúng, chiều cao được tính SAU khi flex nên
+container cao chuẩn); `alignItems=STRETCH` chỉ nới trục phụ bằng `withSize` và
+không cần re-measure.
 
 ---
 
@@ -684,6 +691,78 @@ LinearNode(
 ```
 
 Nếu nội dung lớn hơn size cuối cùng, `DrawSpec` sẽ clip trong bounds đã đo.
+
+---
+
+### 4.12 `TransitionNode` — Animation giữa trạng thái
+
+Container animate thay đổi layout của các con, kiểu `TransitionManager`. Diff node theo `id`: con ở **cả hai** trạng thái → **Change** (trượt + đổi size); chỉ ở trạng thái **mới** → **Enter** (fade/scale vào); chỉ ở trạng thái **cũ** → **Exit** (fade/scale ra). View tự co/giãn size về đúng trạng thái sau khi animate.
+
+```kotlin
+val spec = LayoutEngine.measure(
+    TransitionNode(
+        orientation = Orientation.HORIZONTAL,
+        id = "filter_row",                 // sceneKey để nhớ trạng thái trước
+        transitionKey = state.version,     // đổi giá trị này = animate
+        config = TransitionConfig(enterExit = TransitionType.FADE_SCALE),
+        children = chips.map { KeyedNode(it.id, buildChip(it)) }
+    ),
+    Constraints(width)
+) as TransitionSpec
+// Rebuild cây với transitionKey mới → engine tự animate từ trạng thái trước.
+// Hoặc imperative: spec.transitionTo(newChildren, config)
+```
+
+`TransitionConfig(changeBounds, enterExit, durationMs, boundsMode)`.
+`TransitionType` (enter/exit): `FADE`, `SCALE`, `FADE_SCALE`, `NONE`.
+
+#### Deep capture
+Thu thập node có `id` ở **mọi độ sâu** (theo toạ độ tuyệt đối) — thay đổi lồng sâu bên trong container không-id cũng animate, không cần children phẳng. Node tracked lồng node tracked: node ngoài là 1 unit (node trong đi theo). Reparent xử lý như exit+enter.
+
+#### Interrupt liền mạch
+Re-trigger lúc đang chạy → lấy rect **đang hiển thị** làm start mới (không nhảy về đích cũ).
+
+#### `BoundsMode` — cách xử lý Change (đổi vị trí/size)
+
+| Mode | Hành vi | Chi phí |
+|---|---|---|
+| **`CLIP`** *(mặc định)* | Nội suy khung, nội dung ở layout đích, **clip** theo bounds — đúng như `ChangeBounds` của Android (co/giãn có thể thấy "cắt" nội dung). | Rẻ, không lớp |
+| **`MORPH`** | Trượt + **SCALE** nội dung khít khung + **cross-fade** nội dung cũ→mới (kiểu Material container transform). Mượt, không cắt, chuyển được cả khi **nội dung đổi**. | Cross-fade dùng offscreen layer (xem perf) |
+
+```kotlin
+TransitionConfig(changeBounds = true, enterExit = TransitionType.FADE, boundsMode = BoundsMode.MORPH)
+```
+
+> ⚠️ **ChangeBounds (cả Android lẫn `CLIP` ở đây) KHÔNG reflow nội dung mỗi frame** — nó animate *bounds*, nội dung ở layout đích. Muốn co/giãn mượt không-cắt + đổi nội dung → dùng `MORPH`.
+
+#### Hiệu năng (Pixel 5, 60Hz — budget 16.67ms)
+- **`CLIP`** rẻ: ~60 node Change vẫn ~60fps (p50 ~11ms).
+- **`MORPH` nội-dung-KHÔNG-đổi** = chỉ scale, không layer → rẻ ~ngang CLIP.
+- **`MORPH` cross-fade** (nội dung ĐỔI): engine gom **toàn bộ nội dung cũ vào MỘT offscreen layer/frame** (mọi node cùng progress → cùng alpha), nên scale tốt theo số node:
+
+  | N node cross-fade | jank | p50/frame |
+  |---|---|---|
+  | 20 | 0.7% | 10ms |
+  | 60 | 0.7% | 12ms (≈ CLIP) |
+  | 120 | 4.9% | 25ms |
+
+  Giới hạn ở N rất lớn (120+) là **số lượng draw** (cross-fade vẽ 2× subtree: cũ + mới), không phải layer — chung với mọi animation nhiều node. Khi đó: cull off-screen, hoặc quá ngưỡng thì dùng `MORPH` nội-dung-không-đổi / `CLIP`.
+
+---
+
+### 4.13 `KeyedNode` — Identity + Interaction
+
+Bọc một node bất kỳ, gắn cho nó **key ổn định** (vai trò `transitionName`) để `TransitionNode` diff, đồng thời mang đủ handler `onClick/onLongClick/onTouch/contentDescription`.
+
+```kotlin
+KeyedNode(
+    key = "chip-${item.id}",
+    child = buildChip(item),
+    onClick = { select(item.id) }
+)
+```
+
+> Lưu ý: node thường **đã có sẵn** `onClick/onLongClick/onTouch/contentDescription` trong constructor (xem [Mục 6.3](#63-click--long-click--touch-cho-từng-node)) — chỉ cần `KeyedNode` khi cần **identity** cho diff/transition.
 
 ---
 
@@ -752,8 +831,54 @@ binding.precomputedView.spec = null
 |-----------|---------|
 | Kích thước thay đổi | `requestLayout()` → `postInvalidateOnAnimation()` |
 | Kích thước giữ nguyên | `postInvalidateOnAnimation()` |
-| View đang attached | `onDetachedFromWindow(old)` → `onAttachedToWindow(new)` |
+| View đang attached | attach(new) **trước** → detach(old) sau (ref-count, giữ state cho spec dùng chung) |
 | Spec mới có `ImageSpec` async | Tự bắt đầu load bitmap qua `ImageLoader` |
+
+### 6.3 Click / Long-click / Touch cho từng node
+
+**Mọi node** đều nhận handler trực tiếp trong constructor (không cần bọc gì thêm):
+
+```kotlin
+LinearNode(
+    orientation = Orientation.HORIZONTAL,
+    children = listOf(iconNode, textNode),
+    onClick = { openDetail(item.id) },
+    onLongClick = { showContextMenu(item.id) },
+    contentDescription = "row-${item.id}"       // cho accessibility / UI test
+)
+
+// Touch thô (down / move / up / cancel) với toạ độ LOCAL theo node + raw theo View
+ConstraintNode(
+    children = ...,
+    onTouch = { e ->
+        when (e.action) {
+            TouchAction.DOWN -> startDrag(e.x, e.y)
+            TouchAction.MOVE -> onDrag(e.x, e.y)
+            TouchAction.UP, TouchAction.CANCEL -> endDrag()
+        }
+        true   // đã tiêu thụ
+    }
+)
+```
+
+- `hitTest(x, y)` trả về **spec sâu nhất (top-most)** có handler tại điểm chạm; node biết vị trí của mình (`viewLeft/viewTop/width/height`).
+- `NodeTouch` cung cấp `x/y` (local, đã trừ góc node) và `rawX/rawY` (toạ độ View), cùng `action`.
+- Node được "khoá" theo điểm DOWN: mọi MOVE/UP của cùng gesture đi về đúng node đó.
+- `KeyedNode` cũng mang đủ handler, dùng khi cần thêm **identity ổn định** (diff/transition theo id).
+
+### 6.4 Accessibility & UI test
+
+Nội dung vẽ bằng Canvas nên không có view con để TalkBack / Espresso nhìn thấy. `PrecomputedView` giải quyết bằng `PrecomputedA11yHelper` (ExploreByTouchHelper): **mỗi node interactive thành một virtual accessibility node** có `contentDescription`, bounds thật, action CLICK / LONG_CLICK.
+
+- TalkBack đọc được từng node và kích hoạt click.
+- Espresso / UiAutomator định vị & thao tác từng node theo `contentDescription`:
+
+```kotlin
+// UiAutomator
+device.findObject(By.desc("row-42")).click()
+```
+
+Chỉ cần đặt `contentDescription` cho node clickable — phần còn lại tự động.
 
 ---
 
@@ -893,6 +1018,32 @@ class WordViewHolder(val binding: ItemWordBinding) : RecyclerView.ViewHolder(bin
     var measureJob: Job? = null
 }
 ```
+
+### 8.1 List KHỔNG LỒ (chat 1 triệu item) — đo theo cửa sổ
+
+Cách trên (đo ngay trong `onBind`) ổn cho list vừa. Với list rất lớn, pattern đúng là **tách hẳn đo khỏi binding**: một "spec window" đo chủ động các item quanh vùng hiển thị trên background, evict item ra ngoài cửa sổ, và `onBindViewHolder` **chỉ còn set spec đã đo sẵn**:
+
+```kotlin
+// Nguồn 1 triệu item nằm NGOÀI adapter (List<data> hoặc provider index→node).
+// SpecWindow đo [first-buffer .. last+buffer] off-main, evict phần ngoài cửa sổ.
+override fun onBindViewHolder(holder: VH, position: Int) {
+    holder.view.spec = window.get(position) ?: placeholder   // CHỈ set spec, không đo
+}
+
+// Cập nhật cửa sổ theo scroll:
+recycler.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+    override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
+        window.update(lm.findFirstVisibleItemPosition(), lm.findLastVisibleItemPosition())
+    }
+})
+```
+
+Nguyên tắc:
+- **`onBind` chỉ set spec** — đo là việc của window (proactive, off-main), không reactive trong bind.
+- Giữ **data nhẹ** ngoài list (text/metadata); chỉ dựng node + spec cho item trong cửa sổ.
+- Dùng **placeholder có chiều cao** khi spec chưa kịp đo (tránh RecyclerView bind hàng loạt item 0px).
+
+Kết quả đo thực tế (Pixel 5, list 1.000.000 item): ~12MB Java heap, ~28 view, scroll **0% jank** — RAM **không đổi** dù nhảy tới item thứ 500.000. Tham khảo `LazyChatActivity` trong module `app` để xem `SpecWindow` đầy đủ.
 
 ---
 
@@ -1168,13 +1319,13 @@ LinearNode(
 | Tình huống | Giải pháp thay thế |
 |-----------|-------------------|
 | Width phụ thuộc parent động (ConstraintLayout co giãn) | XML View thông thường |
-| Kích thước đổi liên tục theo animation | Compose / Custom View + `onDraw` trực tiếp |
 | View nhỏ, đơn giản (1 text, 1 image) | `TextView` / `ImageView` thông thường — overhead bg còn đắt hơn |
-| Cần `weight` / flex | Chưa hỗ trợ — cần tự thêm vào `LinearNode` |
-| Cần wrap-line (text flow) | Chưa hỗ trợ — cần tạo `FlowNode` mới |
-| Cần click / hit-test | Chưa hỗ trợ — cần thêm `id` vào node và walk spec tree |
-| Cần background drawable | Chưa hỗ trợ — tạo `BoxNode` / `BackgroundSpec` |
-| Cần border / loading outline | Dùng `OutlineNode` |
+| Cần `weight` trong `LinearNode` | Chưa hỗ trợ — nhưng `FlexboxNode` có `flexGrow` / `flexShrink` |
+| Cần wrap-line (text flow / chip) | Dùng `FlexboxNode` (wrap) |
+| Cần click / long-click / touch | ✅ Có — handler trực tiếp trên mọi node ([Mục 6.3](#63-click--long-click--touch-cho-từng-node)) |
+| Cần accessibility / UI test theo node | ✅ Có — `PrecomputedA11yHelper` ([Mục 6.4](#64-accessibility--ui-test)) |
+| Cần background / border / loading outline | Dùng `BackgroundNode` / `OutlineNode` |
+| Cần animation / transition giữa trạng thái | Dùng `TransitionNode` — deep capture, ChangeBounds (`CLIP`) hoặc container-transform (`MORPH`), Fade/Scale enter-exit, interrupt liền mạch ([Mục 4.12](#412-transitionnode----animation-giữa-trạng-thái)) |
 | `ConstraintNode` chain / Guideline / Barrier | Chưa hỗ trợ |
 
 > ⚠️ **Lưu ý:** `PrecomputedView` báo kích thước `(0, 0)` khi `spec == null`. Tránh đặt view này trong `wrap_content` parent khi chưa có spec — layout có thể bị sụp đến 0 chiều cao.
@@ -1185,13 +1336,12 @@ LinearNode(
 
 | Tính năng | Hướng làm |
 |-----------|----------|
-| `Weight` trong `LinearNode` | Thêm `weight: Float` vào `LayoutNode`, engine pass 2 chia phần dư theo weight. |
-| Wrap-line (`FlowNode`) | Engine break khi `cursor + childWidth > maxWidth`, tạo hàng mới. |
-| LRU Cache | `LruCache<Key, DrawSpec>` với `Key = hash(node, width, fontScale, density)`. |
-| Hit-test (click) | Walk cây spec, check `(x, y)` rơi vào spec nào — gán `id` lên `LayoutNode` để map ngược. |
-| Background | `LayoutNode.Box(child, background, radius)` → `BackgroundSpec(child)`. |
-| `ConstraintNode` chain | Tính tổng size của chain → chia đều theo số member. |
-| Pre-measure tại Repository | Đo ngay khi data về từ DB/network, cache vào memory → bind view ~0ms. |
+| `Weight` trong `LinearNode` | Thêm `weight: Float`, engine pass 2 chia phần dư theo weight (hiện tại dùng `FlexboxNode` thay thế). |
+| `ConstraintNode` chain / Guideline / Barrier | Tính tổng size của chain → chia đều theo số member. |
+| Baseline alignment cho Flexbox | Cần `DrawSpec` expose baseline chung. |
+| 90Hz / 120Hz | Hiện mượt ở 60Hz (0% jank); để đẩy cao hơn cần giảm overdraw GPU (bớt layer/`saveLayerAlpha`). |
+
+> **Đã làm (không còn là TODO):** click/long-click/touch per-node, accessibility + UI test, `BackgroundNode`/`OutlineNode`, wrap-line qua `FlexboxNode`, `TransitionNode` (animation), đo lazy theo cửa sổ cho list khổng lồ. Cache theo id **đã gỡ có chủ đích** (xem [Mục 2](#không-cache--và-vì-sao)) — không khôi phục.
 
 ---
 
