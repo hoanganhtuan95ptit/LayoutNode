@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
+import androidx.core.view.ViewCompat
 
 /**
  * View "dumb tuyệt đối": chỉ giữ một [DrawSpec] và uỷ thác việc vẽ cho nó.
@@ -24,6 +25,15 @@ class PrecomputedView @JvmOverloads constructor(
     override val delegate: PrecomputedDelegate = PrecomputedDelegate(this, context, attrs)
 
     var isFlexibleSize: Boolean = false
+
+    init {
+        // Cho hệ accessibility / UI test thấy từng node interactive như virtual view.
+        ViewCompat.setAccessibilityDelegate(this, delegate.a11yHelper)
+    }
+
+    override fun dispatchHoverEvent(event: MotionEvent): Boolean {
+        return delegate.a11yHelper.dispatchHoverEvent(event) || super.dispatchHoverEvent(event)
+    }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val s = delegate.spec

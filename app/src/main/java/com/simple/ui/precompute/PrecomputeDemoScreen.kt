@@ -90,6 +90,9 @@ private class PrecomputeUiSectionRenderer(
     fun buildItems(): List<ViewItem> {
 
         val out = ArrayList<ViewItem>()
+        addTransitionDemoCard(out)
+        addRebuildTransitionCard(out)
+        addInteractiveDemoCard(out)
         addLinearCards(out)
         addConstraintCards(out)
         addProfileCards(out)
@@ -108,6 +111,43 @@ private class PrecomputeUiSectionRenderer(
         addColorChangingFlexboxCard(out)
         addFooter(out)
         return out
+    }
+
+    private fun addTransitionDemoCard(out: MutableList<ViewItem>) {
+
+        addSection(out, "⓪ TransitionNode  —  chạm header: đổi hiệu ứng · chạm chip: đổi trạng thái")
+        out.add(
+            PrecomputedCardItem(
+                id = "transition-demo",
+                spec = buildTransitionDemoCard(cardWidth, activity.resources.displayMetrics.density),
+                topMarginPx = dp(10)
+            )
+        )
+    }
+
+    private fun addRebuildTransitionCard(out: MutableList<ViewItem>) {
+
+        addSection(out, "⓪b TransitionNode  —  rebuild-driven (chạm để dựng lại + tự animate qua store)")
+        out.add(
+            PrecomputedCardItem(
+                id = "transition-rebuild-demo",
+                spec = buildRebuildTransitionCard(cardWidth, activity.resources.displayMetrics.density),
+                topMarginPx = dp(10)
+            )
+        )
+    }
+
+    private fun addInteractiveDemoCard(out: MutableList<ViewItem>) {
+
+        addSection(out, "⓪c Touch per-node  —  Tap / Hold / Drag (+ a11y, log tag NodeDemo)")
+        val density = activity.resources.displayMetrics.density
+        out.add(
+            PrecomputedCardItem(
+                id = "interactive-demo",
+                spec = LayoutEngine.measure(buildInteractiveDemoCard(cardWidth, density), constraints),
+                topMarginPx = dp(10)
+            )
+        )
     }
 
     private fun addLinearCards(out: MutableList<ViewItem>) {

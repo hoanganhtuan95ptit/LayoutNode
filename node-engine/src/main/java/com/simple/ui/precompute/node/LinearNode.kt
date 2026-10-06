@@ -167,6 +167,10 @@ open class GroupSpec(
         for (i in children.indices) children[i].draw(canvas)
     }
 
+    override fun forEachChildSpec(action: (DrawSpec) -> Unit) {
+        for (i in children.indices) action(children[i])
+    }
+
     override fun onAttachedToRuntime(runtime: PrecomputedRuntime) {
         for (i in children.indices) children[i].attach(runtime, runtimeLeft, runtimeTop)
     }
@@ -187,6 +191,6 @@ open class GroupSpec(
             val hit = children[i].hitTest(lx, ly)
             if (hit != null) return hit
         }
-        return if (node.onClick != null) this else null
+        return if (node.isInteractive) this else null
     }
 }

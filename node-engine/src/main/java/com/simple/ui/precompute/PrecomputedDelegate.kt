@@ -4,31 +4,37 @@ import android.content.Context
 import android.graphics.Canvas
 import android.util.AttributeSet
 import android.view.GestureDetector
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.SoundEffectConstants
 import android.view.View
+import com.simple.ui.precompute.node.NodeTouch
+import com.simple.ui.precompute.node.TouchAction
 
 class PrecomputedDelegate(private val view: View, context: Context, attrs: AttributeSet?) {
 
     private val runtime = PrecomputedRuntime(view)
 
+    /** Expose virtual node cho accessibility / UI test. */
+    val a11yHelper = PrecomputedA11yHelper(view) { interactiveTargets() }
+
+    /** Node đang "giữ" gesture hiện tại (set ở ACTION_DOWN) để route touch. */
+    private var touchTarget: DrawSpec? = null
+
     var spec: DrawSpec? = null
         set(value) {
-            // Identity swap thuần: mọi tối ưu tái sử dụng subtree (skip measure,
-            // giữ drawable / animator / Picture...) đã được xử lý ở
-            // background qua cache-by-id trong [LayoutEngine] + [MeasureContext].
-            // Main thread ở đây chỉ làm swap + attach/detach — không diff cây.
+            // Swap thuần: main thread chỉ làm swap + attach/detach, KHÔNG đo,
+            // KHÔNG diff cây (đo đã xong ở background, LayoutEngine không cache).
             //
-            // Cache hit ở root → LayoutEngine trả về đúng spec cũ mà delegate
-            // đang giữ → `field === value` bắt ngay, thoát sớm, không đụng gì
-            // (không invalidate, không detach/attach).
+            // Caller set đúng lại chính spec đang giữ → `field === value` bắt
+            // ngay, thoát sớm (không invalidate, không detach/attach).
             if (field === value) return
 
             val old = field
             // Thứ tự: attach new TRƯỚC, detach old SAU.
             //
-            // Cache-by-id có thể trả về cây new chứa những [DrawSpec] cùng
-            // reference với cây old (subtree tận dụng lại). Reference counter
+            // Nếu caller tái dùng instance, cây new có thể chứa [DrawSpec] cùng
+            // reference với cây old (subtree dùng chung). Reference counter
             // trong [DrawSpec.attach] / [DrawSpec.detach] cần shared ref
             // không rơi về 0 ở giữa chừng — nếu detach trước, counter đi
             // 1→0 → onDetached chạy, animator stop / scope cancel; sau đó
@@ -46,6 +52,8 @@ class PrecomputedDelegate(private val view: View, context: Context, attrs: Attri
                 runtime.requestDraw()
             }
             if (view.isAttachedToWindow) old?.detach(runtime)
+            // Cây đổi → tập node interactive đổi → dựng lại virtual view a11y.
+            a11yHelper.invalidateRoot()
         }
 
     /**
@@ -74,6 +82,13 @@ class PrecomputedDelegate(private val view: View, context: Context, attrs: Attri
                 view.performClick()
                 return true
             }
+
+            override fun onLongPress(e: MotionEvent) {
+                val hit = spec?.hitTest(e.x.toInt(), e.y.toInt()) ?: return
+                val cb = hit.node?.onLongClick ?: return
+                view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                cb.invoke()
+            }
         }
     )
 
@@ -92,10 +107,55 @@ class PrecomputedDelegate(private val view: View, context: Context, attrs: Attri
     }
 
     /**
-     * Trả về `true` nếu event đã được tiêu thụ bởi node clickable. Caller
-     * (PrecomputedView) fall back về `super.onTouchEvent` khi false.
+     * Trả về `true` nếu event đã được tiêu thụ (có node interactive trúng, hoặc
+     * gesture detector claim). Caller (PrecomputedView) fall back về
+     * `super.onTouchEvent` khi false.
+     *
+     * Vừa route raw touch tới [LayoutNode.onTouch] của node trúng điểm DOWN
+     * (khoá target cho cả gesture), vừa cho [gestureDetector] lo click/long-click.
      */
     fun onTouchEvent(event: MotionEvent): Boolean {
-        return gestureDetector.onTouchEvent(event)
+
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                touchTarget = spec?.hitTest(event.x.toInt(), event.y.toInt())
+                dispatchTouch(event, TouchAction.DOWN)
+            }
+            MotionEvent.ACTION_MOVE -> dispatchTouch(event, TouchAction.MOVE)
+            MotionEvent.ACTION_UP -> dispatchTouch(event, TouchAction.UP)
+            MotionEvent.ACTION_CANCEL -> dispatchTouch(event, TouchAction.CANCEL)
+        }
+
+        val gesture = gestureDetector.onTouchEvent(event)
+        val hadTarget = touchTarget != null
+        if (event.actionMasked == MotionEvent.ACTION_UP ||
+            event.actionMasked == MotionEvent.ACTION_CANCEL
+        ) {
+            touchTarget = null
+        }
+        return gesture || hadTarget
+    }
+
+    private fun dispatchTouch(event: MotionEvent, action: TouchAction) {
+
+        val target = touchTarget ?: return
+        val onTouch = target.node?.onTouch ?: return
+        onTouch(
+            NodeTouch(
+                action = action,
+                x = event.x - target.viewLeft,
+                y = event.y - target.viewTop,
+                rawX = event.x,
+                rawY = event.y
+            )
+        )
+    }
+
+    private fun interactiveTargets(): List<DrawSpec> {
+
+        val root = spec ?: return emptyList()
+        val out = ArrayList<DrawSpec>()
+        root.collectInteractive(out)
+        return out
     }
 }

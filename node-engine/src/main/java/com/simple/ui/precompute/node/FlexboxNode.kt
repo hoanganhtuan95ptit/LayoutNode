@@ -89,6 +89,13 @@ data class FlexChild(
  * - alignItems / alignSelf
  * - alignContent
  * - order, flexGrow, flexShrink, flexBasisPercent, wrapBefore
+ *
+ * ## flex-resize có ĐO LẠI (main axis)
+ * `flexGrow`/`flexShrink` đổi kích thước trục chính của item rồi ĐO LẠI node con
+ * tại size mới (xem [FlexMeasuredItem.resizeMain]), nên text nhiều dòng wrap lại
+ * đúng và chiều cao dòng (cross) được tính SAU khi flex → container cao đúng.
+ * `alignItems=STRETCH` chỉ nới trục phụ (cross) bằng `withSize` và không re-measure
+ * (nới chiều cao không làm text wrap lại), đủ đúng cho mọi trường hợp thường gặp.
  */
 interface FlexboxMeasureNode {
 
@@ -191,25 +198,27 @@ open class FlexboxMeasurePolicy<N> : MeasurePolicy<N>()
             isRow = isRow
         )
 
+        // 1) Trục CHÍNH trước — chỉ phụ thuộc main tự nhiên.
         val naturalInnerMain = lines.maxOfOrNull { it.mainSize } ?: 0
-        val naturalInnerCross = lines.crossSizeWithGaps()
-        val naturalW = if (isRow) {
-            naturalInnerMain + p.horizontal
-        } else {
-            naturalInnerCross + p.horizontal
-        }
-        val naturalH = if (isRow) {
-            naturalInnerCross + p.vertical
-        } else {
-            naturalInnerMain + p.vertical
-        }
+        val mainOuter =
+            if (isRow) layoutWidth.resolve(naturalInnerMain + p.horizontal, c.maxWidth)
+            else layoutHeight.resolve(naturalInnerMain + p.vertical, c.maxHeight)
+        val finalMain = (if (isRow) mainOuter - p.horizontal else mainOuter - p.vertical).coerceAtLeast(0)
 
-        val width = layoutWidth.resolve(naturalW, c.maxWidth)
-        val height = layoutHeight.resolve(naturalH, c.maxHeight)
-        val innerW = (width - p.horizontal).coerceAtLeast(0)
-        val innerH = (height - p.vertical).coerceAtLeast(0)
-        val finalMain = if (isRow) innerW else innerH
-        val finalCross = if (isRow) innerH else innerW
+        // 2) Áp flexGrow/Shrink tại finalMain — ĐO LẠI item để nội dung (vd text)
+        //    wrap lại theo bề rộng mới, nhờ vậy cross (chiều cao) tính ở bước 3
+        //    mới chính xác. (Trước đây flex chỉ clip → cross sai khi re-wrap.)
+        lines.forEach { it.applyFlex(ctx, finalMain, isRow) }
+
+        // 3) Trục PHỤ tính TỪ item đã flex.
+        val flexedInnerCross = lines.crossSizeWithGaps()
+        val crossOuter =
+            if (isRow) layoutHeight.resolve(flexedInnerCross + p.vertical, c.maxHeight)
+            else layoutWidth.resolve(flexedInnerCross + p.horizontal, c.maxWidth)
+        val finalCross = (if (isRow) crossOuter - p.vertical else crossOuter - p.horizontal).coerceAtLeast(0)
+
+        val width = if (isRow) mainOuter else crossOuter
+        val height = if (isRow) crossOuter else mainOuter
 
         val placed = placeLines(
             lines = lines,
@@ -316,8 +325,8 @@ open class FlexboxMeasurePolicy<N> : MeasurePolicy<N>()
     ): List<DrawSpec> {
         if (lines.isEmpty()) return emptyList()
 
-        lines.forEach { it.applyFlex(finalMain, isRow) }
-
+        // Flex đã áp ở measure() (trước khi tính cross). Ở đây chỉ còn stretch +
+        // đặt vị trí.
         val visualLines = if (flexWrap == FlexWrap.WRAP_REVERSE) {
             lines.asReversed()
         } else {
@@ -361,7 +370,7 @@ open class FlexboxMeasurePolicy<N> : MeasurePolicy<N>()
         return placed
     }
 
-    private fun FlexLine.applyFlex(finalMain: Int, isRow: Boolean) {
+    private fun FlexLine.applyFlex(ctx: MeasureContext, finalMain: Int, isRow: Boolean) {
         if (items.isEmpty()) return
 
         val growSpace = finalMain - mainSize
@@ -376,7 +385,7 @@ open class FlexboxMeasurePolicy<N> : MeasurePolicy<N>()
                     (growSpace * item.child.flexGrow / totalGrow).roundToInt()
                 }.coerceAtLeast(0)
                 used += delta
-                item.setMainSize(item.mainSize + delta, isRow)
+                item.resizeMain(ctx, item.mainSize + delta, isRow)
             }
             recalculate(mainGap)
             return
@@ -395,7 +404,7 @@ open class FlexboxMeasurePolicy<N> : MeasurePolicy<N>()
                     (overflow * weight / totalShrink).roundToInt()
                 }.coerceAtLeast(0)
                 removed += delta
-                item.setMainSize((item.mainSize - delta).coerceAtLeast(0), isRow)
+                item.resizeMain(ctx, (item.mainSize - delta).coerceAtLeast(0), isRow)
             }
             recalculate(mainGap)
         }
@@ -565,9 +574,22 @@ private data class FlexMeasuredItem(
     var crossSize: Int
 ) {
 
-    fun setMainSize(size: Int, isRow: Boolean) {
-        mainSize = size.coerceAtLeast(0)
-        spec = spec.withAxisSize(mainSize, crossSize, isRow)
+    /**
+     * Đổi kích thước trục chính VÀ đo lại node con tại size mới để nội dung
+     * wrap lại (vd text đổi số dòng → cross đổi). Vẫn ép đúng main size bằng
+     * [withAxisSize]; cross lấy từ kết quả đo lại.
+     */
+    fun resizeMain(ctx: MeasureContext, size: Int, isRow: Boolean) {
+        val newMain = size.coerceAtLeast(0)
+        val remeasured = ctx.measure(
+            child.node,
+            if (isRow) Constraints(newMain, Int.MAX_VALUE) else Constraints(Int.MAX_VALUE, newMain),
+            0,
+            0
+        )
+        mainSize = newMain
+        crossSize = remeasured.crossSize(isRow)
+        spec = remeasured.withAxisSize(newMain, crossSize, isRow)
     }
 
     fun setCrossSize(size: Int, isRow: Boolean) {

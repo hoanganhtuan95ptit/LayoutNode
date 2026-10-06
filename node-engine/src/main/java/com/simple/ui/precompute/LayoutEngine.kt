@@ -14,36 +14,28 @@ import com.simple.ui.precompute.node.LayoutNode
  */
 object LayoutEngine {
 
+    /**
+     * Đo [node] thành cây [DrawSpec]. Hàm THUẦN, không trạng thái, KHÔNG CACHE:
+     * cùng (node, constraints) luôn ra cùng kết quả; không giữ lại spec nào giữa
+     * các lần gọi (tránh rò rỉ bộ nhớ). Mỗi lần rebuild = đo lại toàn bộ cây.
+     * Phải chạy trên background thread.
+     */
     fun measure(
         node: LayoutNode,
-        constraints: Constraints,
-        id: Any? = null
+        constraints: Constraints
     ): DrawSpec {
 
         if (Thread.currentThread() == Looper.getMainLooper().thread) {
             error("luồng tính toán cần phải xử lý ở background")
         }
 
-        val ctx = MeasureContext()
-        return ctx.measure(node, constraints, 0, 0)
-    }
-
-    /**
-     * Giữ lại để tương thích ngược API (không còn lưu cache).
-     */
-    fun evict(id: Any) {
-    }
-
-    /**
-     * Giữ lại để tương thích ngược API (không còn lưu cache).
-     */
-    fun clearCache() {
+        return MeasureContext().measure(node, constraints, 0, 0)
     }
 }
 
 /**
  * Context truyền xuống [LayoutNode.measure] để node container (vd Linear)
- * có thể đệ quy đo các child mà không cần biết concrete type.
+ * có thể đệ quy đo các child mà không cần biết concrete type. Không giữ state.
  */
 class MeasureContext {
 

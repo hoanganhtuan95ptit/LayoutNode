@@ -155,6 +155,7 @@ class PrecomputeCardBuilders(
 
     fun buildConstraintCard(word: String, ipa: String, meaning: String, iconSource: BigImage, iconSizePx: Int): LayoutNode = ConstraintNode(
         padding = EdgeInsets.all(dp(12)),
+        layoutWidth = LayoutDimension.MatchParent,
         children = listOf(
             ConstraintChild(id = "icon", node = ImageNode(source = iconSource, layoutWidth = LayoutDimension.Fixed(iconSizePx), layoutHeight = LayoutDimension.Fixed(iconSizePx)), startToStartOf = ConstraintNode.PARENT, topToTopOf = ConstraintNode.PARENT),
             ConstraintChild(id = "badge", node = TextNode(text = BigText("EN"), textSizePx = sp(10f), color = 0xFF6200EE.toInt(), typeface = Typeface.DEFAULT_BOLD, padding = EdgeInsets.symmetric(h = dp(6), v = dp(3))), endToEndOf = ConstraintNode.PARENT, topToTopOf = ConstraintNode.PARENT),
@@ -166,6 +167,7 @@ class PrecomputeCardBuilders(
 
     fun buildProfileConstraintCard(name: String, tag: String, role: String, avatarSource: BigImage, avatarSizePx: Int): LayoutNode = ConstraintNode(
         padding = EdgeInsets(left = dp(12), top = dp(12), right = dp(12), bottom = dp(12)),
+        layoutWidth = LayoutDimension.MatchParent,
         children = listOf(
             ConstraintChild(id = "avatar", node = ImageNode(source = avatarSource, layoutWidth = LayoutDimension.Fixed(avatarSizePx), layoutHeight = LayoutDimension.Fixed(avatarSizePx)), startToStartOf = ConstraintNode.PARENT, topToTopOf = ConstraintNode.PARENT),
             ConstraintChild(id = "name", node = TextNode(BigText(name), sp(16f), Color.BLACK, typeface = Typeface.DEFAULT_BOLD, maxLines = 1), startToEndOf = "avatar", marginStart = dp(12), endToEndOf = ConstraintNode.PARENT, topToTopOf = ConstraintNode.PARENT, width = LayoutDimension.MatchParent),

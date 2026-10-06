@@ -72,6 +72,16 @@ data class ConstraintChild(
  * - Chiều cao container = wrap-to-content (max bottom của children + padding).
  * - Dependency cycle → child bị đặt tại (0, 0) làm fallback.
  *
+ * ## WrapContent + neo tới PARENT (two-pass)
+ * Khi container là [LayoutDimension.WrapContent], engine đo 2 lượt: lượt 1 ở
+ * kích thước khả dụng để biết size các child, rồi CO inner về đúng extent nội
+ * dung (tính từ phía start, bỏ phần nở do neo cạnh xa PARENT) và resolve lại.
+ * Nhờ vậy child neo `endToEndOf`/`bottomToBottomOf = PARENT` nằm ở MÉP nội dung
+ * thay vì kéo container phình tới parentMax.
+ * Lưu ý: child [LayoutDimension.MatchParent] căng giữa 2 anchor PARENT thì vẫn
+ * fill (không thể wrap quanh một child chiếm hết) — muốn full width hãy đặt
+ * `layoutWidth = MatchParent` tường minh.
+ *
  * ## Kết quả
  * Trả về [GroupSpec] — cùng kiểu với [LinearNode] để dùng chung [com.simple.ui.precompute.PrecomputedView].
  *
@@ -168,15 +178,17 @@ open class ConstraintMeasurePolicy<N> : MeasurePolicy<N>()
         val innerW = (measureMaxW - p.horizontal).coerceAtLeast(0)
         val innerH = (measureMaxH - p.vertical).coerceAtLeast(0)
 
-        val state = createMeasureState(innerW, innerH)
+        var state = resolveAll(ctx, innerW, innerH)
 
-        // Iterative resolve: mỗi pass giải những child đã đủ dependency
-        repeat(children.size + 1) {
+        // WrapContent: co inner về đúng EXTENT NỘI DUNG (bỏ phần nở do child neo
+        // tới cạnh xa của PARENT) rồi resolve lại — để child neo-PARENT nằm trong
+        // content thật thay vì kéo container phình tới parentMax.
+        val wrapW = if (layoutWidth == LayoutDimension.WrapContent) contentExtentW(state, innerW) else innerW
+        val wrapH = if (layoutHeight == LayoutDimension.WrapContent) contentExtentH(state, innerH) else innerH
+        if (wrapW != innerW || wrapH != innerH) {
 
-            resolveReadyChildren(ctx, state, innerW, innerH)
+            state = resolveAll(ctx, wrapW, wrapH)
         }
-
-        placeUnresolvedChildren(ctx, state, innerW, innerH)
 
         val placed = buildPlacedSpecs(state, p)
         val naturalW = naturalWidth(state.bounds, p)
@@ -196,6 +208,54 @@ open class ConstraintMeasurePolicy<N> : MeasurePolicy<N>()
     ): GroupSpec {
 
         return GroupSpec(left, top, width, height, children, node)
+    }
+
+    private fun resolveAll(ctx: MeasureContext, innerW: Int, innerH: Int): ConstraintMeasureState {
+
+        val state = createMeasureState(innerW, innerH)
+        // Iterative resolve: mỗi pass giải những child đã đủ dependency.
+        repeat(children.size + 1) {
+
+            resolveReadyChildren(ctx, state, innerW, innerH)
+        }
+        placeUnresolvedChildren(ctx, state, innerW, innerH)
+        return state
+    }
+
+    /**
+     * Bề rộng nội dung thật (toạ độ inner) tính từ phía START của mỗi child,
+     * BỎ QUA phần kéo giãn do neo tới cạnh xa của PARENT:
+     * - child có start-anchor → right = startAnchor + width (đã đo).
+     * - child không có start-anchor (chỉ end-to-parent / không neo ngang) →
+     *   chỉ tính width (coi như đặt ở mép trái content; sẽ được dời sang phải
+     *   ở pass sau khi đã biết bề rộng content).
+     */
+    private fun contentExtentW(state: ConstraintMeasureState, innerW: Int): Int {
+
+        var maxRight = 0
+        children.forEach { child ->
+
+            val b = state.bounds[child.id] ?: return@forEach
+            val width = b[2] - b[0]
+            val hasStart = child.startToStartOf != null || child.startToEndOf != null
+            val right = if (hasStart) startAnchor(child, state.bounds) + width else width
+            if (right > maxRight) maxRight = right
+        }
+        return maxRight.coerceIn(0, innerW)
+    }
+
+    private fun contentExtentH(state: ConstraintMeasureState, innerH: Int): Int {
+
+        var maxBottom = 0
+        children.forEach { child ->
+
+            val b = state.bounds[child.id] ?: return@forEach
+            val height = b[3] - b[1]
+            val hasTop = child.topToTopOf != null || child.topToBottomOf != null
+            val bottom = if (hasTop) topAnchor(child, state.bounds) + height else height
+            if (bottom > maxBottom) maxBottom = bottom
+        }
+        return maxBottom.coerceIn(0, innerH)
     }
 
     private fun createMeasureState(innerW: Int, innerH: Int): ConstraintMeasureState {

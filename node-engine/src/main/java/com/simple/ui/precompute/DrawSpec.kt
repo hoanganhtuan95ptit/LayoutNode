@@ -2,8 +2,6 @@ package com.simple.ui.precompute
 
 import android.graphics.Canvas
 import android.os.Build
-import com.simple.ui.precompute.node.Constraints
-import com.simple.ui.precompute.node.LayoutDimension
 import com.simple.ui.precompute.node.LayoutNode
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -33,9 +31,10 @@ abstract class DrawSpec {
     /**
      * [LayoutNode] gốc đã sinh ra spec này.
      *
-     * Dùng để so sánh khi cập nhật spec: nếu node mới structurally-equal với
-     * node của spec cũ, [PrecomputedDelegate] có thể tái sử dụng spec cũ,
-     * tránh requestLayout / mất state runtime (drawable, animator...).
+     * Chủ yếu để tầng trên nhận diện / diff spec (vd TransitionSpec so children
+     * theo id, [com.simple.ui.precompute.node.KeyedNode]) và cho hit-test.
+     * [LayoutEngine] KHÔNG dùng nó để cache hay reuse — mỗi lần đo ra một cây
+     * spec mới hoàn toàn.
      *
      * `open` + mặc định `null` cho tương thích ngược; concrete spec nên override
      * và trả về node đã tạo ra chính nó (thường qua constructor param).
@@ -92,11 +91,14 @@ abstract class DrawSpec {
     /**
      * Reference-counted attach.
      *
-     * Cùng một [DrawSpec] có thể nằm trong **cả cây spec cũ lẫn cây spec mới**
-     * (do cache-by-id trong [MeasureContext] tái sử dụng). Nếu container cứ
-     * gọi thẳng [onAttachedToRuntime] / [onDetachedFromRuntime] khi đệ quy vào
-     * children, shared ref sẽ chịu chu kỳ detach→attach vô ích — animator
-     * (OutlineSpec) restart, scope (ImageSpec) huỷ+tái tạo, callback re-set.
+     * Cùng một [DrawSpec] có thể xuất hiện **nhiều lần / ở cả cây cũ lẫn mới**
+     * khi tầng trên tái dùng instance — vd `withPosition` trả copy dùng CHUNG
+     * spec con bên trong, hay TransitionSpec giữ lại child qua các scene.
+     * ([LayoutEngine] không cache, nên share là do caller chủ động, không phải
+     * engine.) Nếu container cứ gọi thẳng [onAttachedToRuntime] /
+     * [onDetachedFromRuntime] khi đệ quy vào children, shared ref sẽ chịu chu kỳ
+     * detach→attach vô ích — animator (OutlineSpec) restart, scope (ImageSpec)
+     * huỷ+tái tạo, callback re-set.
      *
      * Counter đảm bảo:
      * - [attach]: chỉ gọi [onAttachedToRuntime] khi counter đi từ 0→1
@@ -133,6 +135,10 @@ abstract class DrawSpec {
         private set
     protected var runtimeTop: Int = 0
         private set
+
+    /** Toạ độ tuyệt đối (trong View) của spec — hợp lệ khi đã attach. */
+    val viewLeft: Int get() = runtimeLeft
+    val viewTop: Int get() = runtimeTop
     protected val runtime: PrecomputedRuntime?
         get() = runtimeRef
 
@@ -158,61 +164,35 @@ abstract class DrawSpec {
     open fun onDetachedFromRuntime(runtime: PrecomputedRuntime) {}
 
     /**
-     * Spec này (đã đo trước) có còn dùng được dưới constraint mới [c] không.
-     *
-     * Dùng bởi [MeasureContext] khi tra cache theo `node.id` — trước khi bỏ
-     * qua `node.measure()`, ta phải chắc kết quả nếu đo lại vẫn ra đúng
-     * kích thước hiện tại.
-     *
-     * Logic suy từ [LayoutDimension.resolve] của mỗi axis:
-     * - **Fixed(px)**: `resolve = min(px, max)`. Reuse an toàn khi
-     *   `cached == px && px <= max` (cached chưa từng bị cap và max mới đủ chỗ).
-     * - **MatchParent**: `resolve = max` (unbounded → wrap). Reuse an toàn
-     *   khi `cached == max`. Trường hợp max mới unbounded thì skip cache
-     *   vì kết quả sẽ phụ thuộc contentSize không lưu ở đây.
-     * - **WrapContent**: `resolve = min(content, max)`. Bảo thủ: chỉ reuse
-     *   khi `cached < max` — vì nếu `cached == max` thì có thể đã bị cap
-     *   (content > max), lần đo mới với max khác sẽ ra khác. Trường hợp
-     *   `cached < max` giả định content chính bằng cached (uncapped).
-     *
-     * Trả về `false` khi [node] null (spec ẩn danh — không đủ metadata suy).
-     */
-    open fun canReuseUnder(c: Constraints): Boolean {
-        val n = node ?: return false
-        return axisReusable(n.layoutWidth, width, c.maxWidth) &&
-                axisReusable(n.layoutHeight, height, c.maxHeight)
-    }
-
-    /**
      * Hit-test tại điểm ([x], [y]) trong hệ toạ độ **local của parent**
      * (view space nếu spec này là root).
      *
-     * Trả về spec sâu nhất (top-most con) có `node?.onClick != null` bao phủ
-     * điểm này. Không có → null.
+     * Trả về spec sâu nhất (top-most con) có [LayoutNode.isInteractive] (click /
+     * long-click / touch) bao phủ điểm này. Không có → null.
      *
-     * Base impl chỉ check bounds + [LayoutNode.onClick] của [node]. Container
-     * spec (GroupSpec, SizedSpec) override để đệ quy vào children — child vẽ
-     * sau (topmost) được ưu tiên.
+     * Base impl chỉ check bounds + [node]. Container spec (GroupSpec, SizedSpec)
+     * override để đệ quy vào children — child vẽ sau (topmost) được ưu tiên.
      */
     open fun hitTest(x: Int, y: Int): DrawSpec? {
         val lx = x - left
         val ly = y - top
         if (lx < 0 || ly < 0 || lx >= width || ly >= height) return null
-        return if (node?.onClick != null) this else null
+        return if (node?.isInteractive == true) this else null
     }
 
-    private fun axisReusable(mode: LayoutDimension, cached: Int, maxAvail: Int): Boolean {
-        if (maxAvail == Int.MAX_VALUE) {
-            // Unbounded parent: Fixed & WrapContent chỉ phụ thuộc node content,
-            // cached vẫn đúng. MatchParent unbounded falls back to wrap semantics
-            // → không đủ info để so, skip cache cho case này.
-            return mode !is LayoutDimension.MatchParent
-        }
-        return when (mode) {
-            is LayoutDimension.Fixed -> mode.px == cached && cached <= maxAvail
-            LayoutDimension.MatchParent -> cached == maxAvail
-            LayoutDimension.WrapContent -> cached < maxAvail
-        }
+    /**
+     * Duyệt các spec con trực tiếp (nếu có). Mặc định leaf, không con. Container
+     * override để liệt kê con. Dùng cho [collectInteractive] (accessibility).
+     */
+    open fun forEachChildSpec(action: (DrawSpec) -> Unit) {}
+
+    /**
+     * Gom mọi spec [isInteractive] trong subtree (kèm chính nó) vào [out] —
+     * phục vụ [PrecomputedA11yHelper] expose virtual view cho TalkBack / UI test.
+     */
+    fun collectInteractive(out: MutableList<DrawSpec>) {
+        if (node?.isInteractive == true) out.add(this)
+        forEachChildSpec { it.collectInteractive(out) }
     }
 }
 
@@ -236,6 +216,8 @@ internal open class SizedSpec(
     override fun onDrawContent(canvas: Canvas) {
         child.draw(canvas)
     }
+
+    override fun forEachChildSpec(action: (DrawSpec) -> Unit) = action(child)
 
     override fun withPosition(newLeft: Int, newTop: Int): DrawSpec =
         SizedSpec(newLeft, newTop, width, height, child)
@@ -261,6 +243,6 @@ internal open class SizedSpec(
         // Child được đặt tại (0,0) trong local space của SizedSpec — xem withSize.
         val hit = child.hitTest(lx, ly)
         if (hit != null) return hit
-        return if (node?.onClick != null) this else null
+        return if (node?.isInteractive == true) this else null
     }
 }

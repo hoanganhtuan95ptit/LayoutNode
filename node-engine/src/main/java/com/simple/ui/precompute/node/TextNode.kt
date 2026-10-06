@@ -102,24 +102,36 @@ open class TextMeasurePolicy<N> : MeasurePolicy<N>()
             CrossAlign.END -> Layout.Alignment.ALIGN_OPPOSITE
         }
 
-        val layout = StaticLayout.Builder
-            .obtain(textChar, 0, textChar.length, paint, innerWidth)
-            .setAlignment(alignment)
-            .setLineSpacing(node.lineSpacingAdd, node.lineSpacingMul)
-            .setMaxLines(node.maxLines)
-            .setEllipsize(TextUtils.TruncateAt.END)
-            .setIncludePad(false)
-            .build()
+        fun buildLayout(widthPx: Int): StaticLayout =
+            StaticLayout.Builder
+                .obtain(textChar, 0, textChar.length, paint, widthPx.coerceAtLeast(0))
+                .setAlignment(alignment)
+                .setLineSpacing(node.lineSpacingAdd, node.lineSpacingMul)
+                .setMaxLines(node.maxLines)
+                .setEllipsize(TextUtils.TruncateAt.END)
+                .setIncludePad(false)
+                .build()
 
-        val usedWidth = (0 until layout.lineCount)
-            .maxOfOrNull { layout.getLineWidth(it) }
+        val measured = buildLayout(innerWidth)
+
+        val usedWidth = (0 until measured.lineCount)
+            .maxOfOrNull { measured.getLineWidth(it) }
             ?.let { ceil(it.toDouble()).toInt() }
             ?: 0
 
         val contentW = usedWidth.coerceAtMost(innerWidth) + p.horizontal
-        val contentH = layout.height + p.vertical
+        val contentH = measured.height + p.vertical
         val w = node.layoutWidth.resolve(contentW, c.maxWidth)
         val h = node.layoutHeight.resolve(contentH, c.maxHeight)
+
+        // CENTER/END căn theo bề rộng layout. Nếu box co lại nhỏ hơn bề rộng đo
+        // (vd WrapContent), phải dựng lại layout đúng bề rộng nội dung — nếu
+        // không các dòng bị căn theo innerWidth rộng rồi tràn ra ngoài Picture.
+        val finalInner = (w - p.horizontal).coerceAtLeast(0)
+        val layout =
+            if (node.alignment != CrossAlign.START && finalInner != innerWidth) buildLayout(finalInner)
+            else measured
+
         val picture = recordTextPicture(layout, p.left, p.top, w, h)
         return createSpec(
             left = x,

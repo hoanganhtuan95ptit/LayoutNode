@@ -41,6 +41,22 @@ enum class Orientation { HORIZONTAL, VERTICAL }
 
 enum class CrossAlign { START, CENTER, END }
 
+/** Loại sự kiện touch cấp node. */
+enum class TouchAction { DOWN, MOVE, UP, CANCEL }
+
+/**
+ * Một sự kiện touch gửi tới [LayoutNode.onTouch].
+ * - [x]/[y]: toạ độ LOCAL so với góc trên-trái của node (đã trừ vị trí node).
+ * - [rawX]/[rawY]: toạ độ trong View.
+ */
+class NodeTouch(
+    val action: TouchAction,
+    val x: Float,
+    val y: Float,
+    val rawX: Float,
+    val rawY: Float
+)
+
 /**
  * XML-like dimension mode shared by every [LayoutNode].
  *
@@ -112,19 +128,16 @@ abstract class LayoutNode {
     open val layoutHeight: LayoutDimension = LayoutDimension.WrapContent
 
     /**
-     * Optional stable identity dùng cho **spec cache trong [com.simple.ui.precompute.MeasureContext]**.
+     * Optional stable identity cho TẦNG TRÊN dùng (không phải engine):
+     * nhận diện/diff một logical unit qua các lần rebuild — vd
+     * [com.simple.ui.precompute.node.TransitionSpec] so children theo id để biết
+     * cái nào vào/ra/di chuyển, hay [com.simple.ui.precompute.node.KeyedNode].
      *
-     * Contract (do caller giữ):
-     * - Cùng một logical unit qua các lần rebuild tree phải có cùng [id].
-     * - Nếu node vẫn là **cùng instance** (`===`) so với lần trước, cache hit
-     *   → bỏ qua `node.measure()`, tận dụng nguyên spec cũ (giữ Picture,
-     *   Rect, drawable, animator state...). Đây là fast-path chính.
-     * - Nếu node là instance mới (dù nội dung không đổi), cache miss → đo lại.
-     *   Muốn tránh, hãy giữ ref subtree không thay đổi (kiểu memo/immutable).
-     * - Trùng id giữa 2 node khác nhau trong cùng tree = undefined behavior;
-     *   caller tự chịu trách nhiệm unique.
+     * [com.simple.ui.precompute.LayoutEngine] KHÔNG cache/reuse theo id — mỗi
+     * lần đo ra cây spec mới (cơ chế cache cũ đã bị gỡ để tránh memory leak).
      *
-     * Không gán id → node không bao giờ vào cache, luôn measure lại.
+     * Quy ước khi dùng: cùng một logical unit qua các lần rebuild nên giữ cùng
+     * [id]; trùng id giữa 2 unit khác nhau trong cùng tree = undefined behavior.
      */
     open val id: Any? = null
 
@@ -140,6 +153,31 @@ abstract class LayoutNode {
      * [android.view.GestureDetector]. Không giữ ref tới View / Context ở đây.
      */
     open val onClick: (() -> Unit)? = null
+
+    /**
+     * Callback khi user nhấn giữ (long-press) trong bounds của node (top-most
+     * con thắng). Dispatch trên main thread qua [android.view.GestureDetector].
+     */
+    open val onLongClick: (() -> Unit)? = null
+
+    /**
+     * Nhận raw touch của node: DOWN → MOVE* → UP/CANCEL, với toạ độ LOCAL
+     * ([NodeTouch.x]/[y] đã trừ vị trí node) + raw theo View. Node được "khoá"
+     * theo điểm DOWN: mọi MOVE/UP/CANCEL của cùng gesture đi về node đó.
+     * Trả `true` nếu đã tiêu thụ. Dùng cho kéo/vuốt/giữ... ở mức node.
+     */
+    open val onTouch: ((NodeTouch) -> Boolean)? = null
+
+    /**
+     * Mô tả cho accessibility / UI test. Node [isInteractive] nên có giá trị để
+     * TalkBack đọc và Espresso/UiAutomator định vị được (xem
+     * [com.simple.ui.precompute.PrecomputedA11yHelper]).
+     */
+    open val contentDescription: String? = null
+
+    /** Node có bất kỳ handler nào (click/long-click/touch) → tham gia hit-test. */
+    open val isInteractive: Boolean
+        get() = onClick != null || onLongClick != null || onTouch != null
 
     /**
      * Tự đo và trả về [com.simple.ui.precompute.DrawSpec] tại vị trí ([x], [y]).

@@ -52,6 +52,7 @@ afterEvaluate {
 
 dependencies {
     implementation(libs.androidx.core.ktx)
+    implementation("androidx.customview:customview:1.1.0")
     implementation(libs.kotlinx.coroutines.android)
     
     implementation(libs.glide)
